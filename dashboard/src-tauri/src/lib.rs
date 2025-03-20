@@ -1,5 +1,6 @@
 mod csv;
 mod socket;
+mod can_communication;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

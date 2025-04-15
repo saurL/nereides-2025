@@ -1,0 +1,81 @@
+from smbus import SMBus
+import time
+
+I2C_ADDR = 0x42
+bus = SMBus(1)
+buffer = ""
+
+latitude = None
+longitude = None
+vitesse_kmh = None
+
+def extraire_infos_gps():
+    global buffer, latitude, longitude, vitesse_kmh
+    try:
+        data = bus.read_i2c_block_data(I2C_ADDR, 0xFF, 32)
+        texte = ''.join([chr(b) for b in data if 32 <= b < 127])
+        buffer += texte
+
+        #  sur GNGGA : position
+        if "$GNGGA" in buffer:
+            start = buffer.find("$GNGGA")
+            end = buffer.find('\n', start)
+            if end != -1:
+                ligne = buffer[start:end]
+                buffer = buffer[end+1:]
+                champs = [champ.strip() for champ in ligne.split(',')]
+
+                if len(champs) > 5 and champs[2] and champs[4]:
+                    # Latitude
+                    raw_lat = champs[2]
+                    lat_dir = champs[3]
+                    deg_lat = float(raw_lat[:2])
+                    min_lat = float(raw_lat[2:])
+                    lat = deg_lat + (min_lat / 60)
+                    if lat_dir == 'S':
+                        lat *= -1
+
+                    # Longitude
+                    raw_lon = champs[4]
+                    lon_dir = champs[5]
+                    deg_lon = float(raw_lon[:3])
+                    min_lon = float(raw_lon[3:])
+                    lon = deg_lon + (min_lon / 60)
+                    if lon_dir == 'W':
+                        lon *= -1
+
+                    latitude = lat
+                    longitude = lon
+
+        # Vitesse
+        if "$GNRMC" in buffer:
+            start = buffer.find("$GNRMC")
+            end = buffer.find('\n', start)
+            if end != -1:
+                ligne = buffer[start:end]
+                buffer = buffer[end+1:]
+                champs = [champ.strip() for champ in ligne.split(',')]
+
+                if len(champs) > 7 and champs[7]:
+                    speed_knots = float(champs[7])
+                    vitesse_kmh = speed_knots * 1.852
+
+       
+        if latitude is not None and longitude is not None and vitesse_kmh is not None:
+            print(f"Latitude  : {latitude:.6f}°")
+            print(f"Longitude : {longitude:.6f}°")
+            print(f"Vitesse   : {vitesse_kmh:.2f} km/h")
+            print("-----------------------------")
+            vitesse_kmh = None  
+
+    except Exception as e:
+        print("Erreur :", e)
+
+print("Lecture GPS : position + vitesse (Ctrl+C pour quitter)")
+try:
+    while True:
+        extraire_infos_gps()
+        time.sleep(0.2)
+except KeyboardInterrupt:
+    print("Arrêt du script.")
+    bus.close()

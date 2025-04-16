@@ -66,58 +66,6 @@ void setup() {
         while(1); // Bloquer si le CAN ne démarre pas
     }
 }
-// La méthode sendFuelCellData sert a rien !!
-void sendFuelCellData() {
-    CanFrame txFrame;
-
-    // Trame 1 : État système + Flags + H2 + Temp
-    txFrame.identifier = 0x300;
-    txFrame.data_length_code = 4;
-    txFrame.data[0] = fuelCellData.systemState;
-    txFrame.data[1] = fuelCellData.systemFlags;
-    txFrame.data[2] = fuelCellData.h2Consumption;
-    txFrame.data[3] = fuelCellData.avgTemp;
-    if(!ESP32Can.writeFrame(txFrame)) {
-        Serial.println("Erreur envoi trame 0x300");
-    }
-
-    // Trame 2 : Courant + Tension (codés en entier)
-    txFrame.identifier = 0x301;
-    txFrame.data_length_code = 4;
-    uint16_t currentInt = fuelCellData.current * 100;
-    uint16_t voltageInt = fuelCellData.voltage * 100;
-    txFrame.data[0] = currentInt >> 8;
-    txFrame.data[1] = currentInt & 0xFF;
-    txFrame.data[2] = voltageInt >> 8;
-    txFrame.data[3] = voltageInt & 0xFF;
-    if(!ESP32Can.writeFrame(txFrame)) {
-        Serial.println("Erreur envoi trame 0x301");
-    }
-
-    // Trame 3 : Pression H2 + Tension auxiliaire
-    txFrame.identifier = 0x302;
-    txFrame.data_length_code = 4;
-    uint16_t h2Int = fuelCellData.h2Pressure * 100;
-    uint16_t auxInt = fuelCellData.auxVoltage * 100;
-    txFrame.data[0] = h2Int >> 8;
-    txFrame.data[1] = h2Int & 0xFF;
-    txFrame.data[2] = auxInt >> 8;
-    txFrame.data[3] = auxInt & 0xFF;
-    if(!ESP32Can.writeFrame(txFrame)) {
-        Serial.println("Erreur envoi trame 0x302");
-    }
-
-    // Trame 4 : Temps de fonctionnement et énergie
-    txFrame.identifier = 0x303;
-    txFrame.data_length_code = 4;
-    txFrame.data[0] = fuelCellData.runtime >> 8;
-    txFrame.data[1] = fuelCellData.runtime & 0xFF;
-    txFrame.data[2] = fuelCellData.energy >> 8;
-    txFrame.data[3] = fuelCellData.energy & 0xFF;
-    if(!ESP32Can.writeFrame(txFrame)) {
-        Serial.println("Erreur envoi trame 0x303");
-    }
-}
 
 void processAuxVoltageFrame(CanFrame &frame) {
     if(frame.data_length_code >= 6) {
@@ -275,7 +223,7 @@ void loop() {
                 Serial.printf("Trame non gérée - ID: 0x%X\n", rxFrame.identifier);
                 break;
         }
-        sendFuelCellData();
+        
         // Afficher les données après chaque mise à jour
         printAllData();
         

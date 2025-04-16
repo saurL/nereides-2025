@@ -66,7 +66,7 @@ void setup() {
         while(1); // Bloquer si le CAN ne démarre pas
     }
 }
-
+// La méthode sendFuelCellData sert a rien !!
 void sendFuelCellData() {
     CanFrame txFrame;
 

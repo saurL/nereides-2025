@@ -139,6 +139,18 @@ struct FuelCellData {
 
 FuelCellData fuelCellData;
 
+// Structure pour les capteurs d'hydrogène
+struct H2SensorsData {
+    uint16_t pacValue = 0;         // Valeur du capteur H2 PAC (en ppm)
+    uint16_t bottlesValue = 0;     // Valeur du capteur H2 bouteilles (en ppm)
+    bool pacSensorOk = false;      // État du capteur PAC
+    bool bottlesSensorOk = false;  // État du capteur bouteilles
+    unsigned long lastUpdate = 0;  // Timestamp de la dernière mise à jour
+};
+
+H2SensorsData h2SensorsData;
+
+
 
 // Structure globale contenant toutes les données du contrôleur moteur
 struct MotorControllerData {
@@ -325,6 +337,23 @@ void decodeMessage2(const CanFrame &frame) {
 
 }
 
+// Traitement de la trame 0x305 pour les capteurs H2
+void processH2SensorsFrame(CanFrame &frame) {
+    if(frame.data_length_code >= 8) {
+        h2SensorsData.pacValue = (frame.data[0] << 8) | frame.data[1];
+        h2SensorsData.bottlesValue = (frame.data[2] << 8) | frame.data[3];
+
+        h2SensorsData.pacSensorOk = frame.data[4] & 0x01;
+        h2SensorsData.bottlesSensorOk = frame.data[5] & 0x01;
+
+        h2SensorsData.lastUpdate = millis();
+
+        send_data("h2_pac_ppm", h2SensorsData.pacValue);
+        send_data("h2_bottle_ppm", h2SensorsData.bottlesValue);
+        send_data("h2_pac_status", h2SensorsData.pacSensorOk ? "OK" : "ERREUR");
+        send_data("h2_bottle_status", h2SensorsData.bottlesSensorOk ? "OK" : "ERREUR");
+    }
+}
 
 
 void setup() {
@@ -396,6 +425,10 @@ void loop() {
             case 0x090: 
                 processAuxVoltageFrame(rxFrame);
                 break; 
+            case 0x305:
+                processH2SensorsFrame(rxFrame);
+                break;
+
             default:
                 Serial.println("Unknown frame, printing raw data:");
                 for (int i = 0; i < rxFrame.data_length_code; i++) {

@@ -1,5 +1,4 @@
 #include <ESP32-TWAI-CAN.hpp>
-
 // Pins CAN (à adapter selon votre configuration)
 #define CAN_TX 21
 #define CAN_RX 22
@@ -71,6 +70,15 @@ struct MotorControllerData {
 
 // Instanciation globale
 MotorControllerData controllerData;
+
+struct TemperatureData {
+    float tempSensor1 = 0.0f;
+    float tempSensor2 = 0.0f;
+    float tempSensor3 = 0.0f;
+    unsigned long lastUpdate = 0;
+};
+
+TemperatureData tempData;
 
 void setup() {
     // Setup serial pour le débogage
@@ -230,6 +238,17 @@ void decodeMessage2(const CanFrame &frame) {
     Serial.printf("Hall Sensors: A=%d, B=%d, C=%d\n",
                   controllerData.hall_a, controllerData.hall_b, controllerData.hall_c);
 }
+//méthode pour les sondes de temp
+void processTempSonde(const CanFrame &frame){
+  int16_t rawTemp1 = (rxFrame.data[0] << 8) | rxFrame.data[1];
+  int16_t rawTemp2 = (rxFrame.data[2] << 8) | rxFrame.data[3];
+  int16_t rawTemp3 = (rxFrame.data[4] << 8) | rxFrame.data[5];
+
+  tempData.tempSensor1 = rawTemp1 / 100.0f;
+  tempData.tempSensor2 = rawTemp2 / 100.0f;
+  tempData.tempSensor3 = rawTemp3 / 100.0f;
+  tempData.lastUpdate = millis();
+}
 
 void loop() {
     if (ESP32Can.readFrame(rxFrame, 1000)) {
@@ -275,6 +294,9 @@ void loop() {
 
             case 0x090: 
                 processAuxVoltageFrame(rxFrame);
+                break; 
+            case 0x304 : 
+                processTempSonde(rxFrame); 
                 break; 
             default:
                 Serial.println("Unknown frame, printing raw data:");
@@ -340,6 +362,11 @@ void printAllData() {
                   controllerData.switch_brake);
     Serial.printf("Hall Sensors: A=%d, B=%d, C=%d\n",
                   controllerData.hall_a, controllerData.hall_b, controllerData.hall_c);
+    Serial.println("=== DONNÉES REÇUES PAR Sonde température ===");
+            Serial.printf("Timestamp: %lu ms\n", tempData.lastUpdate);
+            Serial.printf("Sonde 1: %.2f °C\n", tempData.tempSensor1);
+            Serial.printf("Sonde 2: %.2f °C\n", tempData.tempSensor2);
+            Serial.printf("Sonde 3: %.2f °C\n\n", tempData.tempSensor3);
 }
 
 

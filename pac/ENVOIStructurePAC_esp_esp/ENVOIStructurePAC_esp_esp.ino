@@ -58,9 +58,9 @@ struct TemperatureData {
 
 TemperatureData tempData;
 // Définir les adresses des sondes de température (à remplir avec les adresses spécifiques de tes sondes)
-DeviceAddress sensor1Address = {0x28, 0xAA, 0xA1, 0x9D, 0x0F, 0x00, 0x00, 0x50}; //vraie adresse de la sonde qu'on a deja 
-DeviceAddress sensor2Address = {}; 
-DeviceAddress sensor3Address = {}; 
+DeviceAddress sensor1Address = {0x28, 0xAA, 0xA1, 0x9D, 0x0F, 0x00, 0x00, 0x50}; //courte sonde  
+DeviceAddress sensor2Address = {0x28, 0x1A, 0x85, 0x46, 0xD4, 0xC9, 0x6E, 0x81}; //longue sonde avec || dessiné 
+DeviceAddress sensor3Address = {0x28, 0xDA, 0xB6, 0x46, 0xD4, 0x07, 0x41, 0xDE}; //longue sonde sans ||
 
 void setup() {
     // Setup serial pour le débogage

@@ -1,3 +1,6 @@
+// CODE ESP BOITE PAC QUI RECOIT INFOS DE LA PAC, DES SONDES DE TEMP, DES CAPT H2 
+//ET QUI ENVOIE LES VALEURS DES SONDES DE TEMP (ID 304) ET DES CAPT H2 (ID 305) VIA CAN
+
 #include <ESP32-TWAI-CAN.hpp>
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -76,8 +79,8 @@ H2SensorData h2Data;
 
 // Définir les adresses des sondes de température (à remplir avec les adresses spécifiques de tes sondes)
 DeviceAddress sensor1Address = {0x28, 0xAA, 0xA1, 0x9D, 0x0F, 0x00, 0x00, 0x50}; //vraie adresse de la sonde qu'on a deja 
-DeviceAddress sensor2Address = {}; 
-DeviceAddress sensor3Address = {}; 
+DeviceAddress sensor2Address = {0x28, 0x1A, 0x85, 0x46, 0xD4, 0xC9, 0x6E, 0x81}; //longue sonde avec || dessiné  
+DeviceAddress sensor3Address = {0x28, 0xDA, 0xB6, 0x46, 0xD4, 0x07, 0x41, 0xDE}; //longue sonde sans ||
 
 // Ports série pour les capteurs H2
 HardwareSerial h2PacSerial(1); // UART1 pour le capteur dans le boîtier PAC
@@ -145,7 +148,7 @@ void sendH2SensorData() {
     CanFrame txFrame;
 
     // Trame ID 0x035 pour les capteurs H2
-    txFrame.identifier = 0x035;
+    txFrame.identifier = 0x305;
     txFrame.data_length_code = 8;  // 8 octets de données
     
     // Conversion des valeurs en ppm (uint16_t)

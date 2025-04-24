@@ -1,0 +1,50 @@
+// Alimenter en 3.3V
+
+const int thermistorPin = 4;  
+const float seriesResistor = 100000.0;  
+const float nominalResistance = 100000.0; 
+const float nominalTemperature = 25.0; 
+const float bCoefficient = 3950;
+const int adcMax = 4095; // ADC 12 bits pour ESP32 (par défaut)
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Lecture de température via NTC...");
+}
+
+void loop() {
+  int adcValue = analogRead(thermistorPin);
+  float voltage = adcValue * 3.3 / adcMax; // Tension max sur ESP32 = 3.3V
+
+  if (voltage < 0.01) {
+    Serial.println("Tension trop basse : vérifie le câblage !");
+    delay(2000);
+    return;
+  }
+
+  float resistance = seriesResistor * (3.3 / voltage - 1);
+
+  float steinhart;
+  steinhart = resistance / nominalResistance;
+  steinhart = log(steinhart);
+  steinhart /= bCoefficient;
+  steinhart += 1.0 / (nominalTemperature + 273.15);
+  steinhart = 1.0 / steinhart;
+  steinhart -= 273.15;
+
+  Serial.println("------------");
+  Serial.print("ADC brut : ");
+  Serial.println(adcValue);
+  Serial.print("Tension : ");
+  Serial.print(voltage, 3);
+  Serial.println(" V");
+  Serial.print("Résistance NTC : ");
+  Serial.print(resistance, 1);
+  Serial.println(" Ohms");
+  Serial.print("Température : ");
+  Serial.print(steinhart, 2);
+  Serial.println(" °C");
+
+  delay(2000);
+}

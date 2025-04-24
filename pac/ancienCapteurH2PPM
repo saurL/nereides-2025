@@ -1,0 +1,38 @@
+#define SENSOR_PIN 32  
+#define VCC 5.0        
+#define RL 1000.0      
+
+// Coefficients estimés à partir de la courbe du MQ-8
+#define A -1.48        
+#define B 4.4       
+
+
+float Ro = 16.5;  
+
+void setup() {
+    Serial.begin(9600);
+}
+
+void loop() {
+
+    int sensorValue = analogRead(SENSOR_PIN);
+    float Vrl = (sensorValue / 1023.0) * VCC;  // Conversion en volts
+    
+   
+    float Rs = ((VCC / Vrl) - 1) * RL;
+
+    float ratio = Rs / Ro;
+
+    // Convertir en ppm 
+    float ppm = pow(10, (log10(ratio) - B) / A);
+
+    // Afficher 
+    Serial.print("Vrl (V) : ");
+    Serial.print(Vrl, 2);
+    Serial.print("\tRs (Ohm) : ");
+    Serial.print(Rs, 2);
+    Serial.print("\tH2 (ppm) : ");
+    Serial.println(ppm, 2);
+
+    delay(1000);  
+}

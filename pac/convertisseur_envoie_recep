@@ -1,130 +1,143 @@
 #include <ESP32-TWAI-CAN.hpp>
 
-#define CAN_TX      5
-#define CAN_RX      4
+// Définition des broches CAN (modifiables si nécessaire)
+#define CAN_TX 5
+#define CAN_RX 4
 
-// IDs des trames CAN
-#define COMMAND_FRAME_ID      0x050  // Commande -> convertisseur
-#define INFO_FRAME_ID         0x051  // Réponse convertisseur
-#define CONFIG_FRAME_ID       0x052  // Nouvelle trame de configuration
-
-// Paramètres
-#define TARGET_CURRENT        55     // 55A (valeur cible)
-#define TEMP_CRITICAL         80     // Arrêt à 80°C
-#define TEMP_THRESHOLD        70     // Réduction à 70°C
-#define CURRENT_DECREMENT     5      // Pas de réduction
-#define TEMP_CHECK_DELAY      2000   // Vérif toutes les 2s
-
-// Structure pour stocker la configuration reçue (trame 0x052)
-typedef struct {
-    uint8_t baudrate;          // Octet 0 : 1=125kbps, 2=250kbps, 3=500kbps
-    uint8_t numberDCDC;        // Octet 1 : Nombre de convertisseurs
-    uint8_t rampSetting;       // Octet 2 : Température des convertisseurs (?)
-    uint8_t currentLimit;      // Octet 3 : Limite de courant actuelle (A)
-    uint16_t maxCurrent;       // Octets 4-5 : Limite max de courant (A)
-    uint8_t softwareRevision;  // Octet 6 : Version du logiciel
-} ConfigData;
-
-ConfigData systemConfig;  // Variable globale pour la configuration
-bool configRequested = false;  // True si on a demandé la config (octet 3 de 0x050)
-
+// Instance pour les trames reçues
 CanFrame rxFrame;
-uint16_t currentCommand = TARGET_CURRENT;
-uint16_t internalTemp = 0;
-bool overTempFlag = false;
 
-// Envoi d'une commande de courant (avec gestion du booléen de demande de config)
-void sendCurrentCommand(uint16_t current, bool requestConfig = false) {
-    CanFrame frame = {0};
-    frame.identifier = COMMAND_FRAME_ID;
-    frame.extd = 0;
-    frame.data_length_code = 4;
-    
-    frame.data[0] = current & 0xFF;         // LSB (octet 0)
-    frame.data[1] = (current >> 8) & 0xFF;  // MSB (octet 1)
-    frame.data[2] = 0;                       // Réservé (octet 2)
-    frame.data[3] = requestConfig ? 1 : 0;   // Octet 3 : Demande de config (booléen)
-    
-    ESP32Can.writeFrame(frame);
-    Serial.printf("[CAN] Envoi commande : %dA | Demande config : %d\n", 
-                 current, requestConfig);
+//----------------------------------------------------------------------
+// Fonction : Envoi de la trame RX_CONTROL (ID 0x50)
+//----------------------------------------------------------------------
+void sendControlFrame() {
+    CanFrame controlFrame = {0};
+    controlFrame.identifier = 0x50;  // ID 80 en décimal
+    controlFrame.extd = 0;           // trame standard (11 bits)
+    controlFrame.data_length_code = 4;  // 4 octets
+
+    uint16_t current_command = 0;      // Commande de courant (0A ici)
+    uint8_t configuration_request = 1; // Demande de configuration
+    uint8_t relay_command = 0;         // Commande du relais (0 ici)
+
+    // Remplissage des octets (little-endian)
+    controlFrame.data[0] = current_command & 0xFF;
+    controlFrame.data[1] = (current_command >> 8) & 0xFF;
+    controlFrame.data[2] = configuration_request;
+    controlFrame.data[3] = relay_command;
+
+    ESP32Can.writeFrame(controlFrame);
+    Serial.println("Trame RX_CONTROL envoyée (ID 0x50)");
 }
 
-// Fonction pour demander la configuration (met l'octet 3 de 0x050 à 1)
-void requestConfiguration() {
-    configRequested = true;
-    sendCurrentCommand(currentCommand, true);  // Envoi avec demande de config
+//----------------------------------------------------------------------
+// Fonction : Décodage de la trame TX_INFORMATIONS (ID 0x51)
+//----------------------------------------------------------------------
+void decodeTxInformations(const CanFrame &frame) {
+    // Décodage des signaux selon votre documentation
+    uint8_t current_setting_request = frame.data[0];
+    uint8_t current = frame.data[1];
+    int16_t internal_temp_raw = (int16_t)(frame.data[2] | (frame.data[3] << 8)); // Température brute
+    float internal_temperature = internal_temp_raw * 0.1;                        // Conversion en °C
+    uint8_t relay = frame.data[4] & 0x01;                                       // bit 0
+    uint8_t overtemp_flag = (frame.data[4] >> 1) & 0x01;                        // bit 1
+
+    // Affichage des données interprétées
+    Serial.println("----- TX_INFORMATIONS -----");
+    Serial.printf("Current Setting Request : %d A\n", current_setting_request); // Requête courant
+    Serial.printf("Current                 : %d A\n", current);                 // Courant mesuré
+    Serial.printf("Internal Temperature    : %.1f °C\n", internal_temperature); // Température interne
+    Serial.printf("Relay                   : %d\n", relay);                     // État du relais
+    Serial.printf("Overtemperature Flag    : %d\n", overtemp_flag);             // Erreur de surchauffe
+    Serial.println("---------------------------");
+}
+
+//----------------------------------------------------------------------
+// Fonction : Décodage de la trame TX_CONFIG (ID 0x52)
+//----------------------------------------------------------------------
+//----------------------------------------------------------------------
+// Fonction : Décodage de la trame TX_CONFIG (ID 0x52)
+//----------------------------------------------------------------------
+void decodeTxConfig(const CanFrame &frame) {
+    // Décodage des signaux
+    uint8_t can_bitrate = frame.data[0];
+    uint8_t number_dcdc = frame.data[1];
+    uint8_t ramp_setting = frame.data[2];
+    uint8_t current_limit_setting = frame.data[3];
+    uint16_t max_current_raw = frame.data[4] | (frame.data[5] << 8);
+    float max_current = max_current_raw * 0.01; // Conversion en ampères (plage de 0 à 55)
+
+    uint8_t software_number = frame.data[6];
+
+    // Conversion CAN Bitrate
+    String bitrate;
+    if (can_bitrate == 1) {
+        bitrate = "250 kbits/s";
+    } else if (can_bitrate == 2) {
+        bitrate = "500 kbits/s";
+    } else {
+        bitrate = "125 kbits/s (défaut)";
+    }
+
+    // Conversion Ramp Setting
+    String ramp_description;
+    switch (ramp_setting) {
+        case 0: ramp_description = "0.5 A/s"; break;
+        case 1: ramp_description = "0.2 A/s"; break;
+        case 2: ramp_description = "0.1 A/s"; break;
+        case 3: ramp_description = "1 A/s"; break;
+        case 4: ramp_description = "2 A/s"; break;
+        case 5: ramp_description = "5 A/s"; break;
+        case 6: ramp_description = "Pas de ramping (No ramp)"; break;
+        default: ramp_description = "Valeur inconnue"; break;
+    }
+
+    // Affichage des données interprétées
+    Serial.println("----- TX_CONFIG -----");
+    Serial.printf("CAN Bitrate           : %s\n", bitrate.c_str());
+    Serial.printf("Number DCDC           : %d\n", number_dcdc);
+    Serial.printf("Ramp Setting          : %s\n", ramp_description.c_str());
+    Serial.printf("Current Limit Setting : %d A\n", current_limit_setting);
+    Serial.printf("Max Current           : %.2f A\n", max_current);
+    Serial.printf("Software Number       : %d\n", software_number);
+    Serial.println("---------------------");
 }
 
 void setup() {
+    // Démarrage de la communication série pour le débogage
     Serial.begin(115200);
+    Serial.println("Initialisation...");
+
+    // Configuration des broches CAN
     ESP32Can.setPins(CAN_TX, CAN_RX);
-    if (!ESP32Can.begin(ESP32Can.convertSpeed(250))) {
-        Serial.println("[ERREUR] Échec du bus CAN !");
-        while(1);
+    ESP32Can.setRxQueueSize(10); // Augmentation de la taille de la file RX
+    ESP32Can.setTxQueueSize(10); // Augmentation de la taille de la file TX
+
+    // Initialisation du bus CAN à 250 kb/s
+    if (ESP32Can.begin(ESP32Can.convertSpeed(250), CAN_TX, CAN_RX, 10, 10)) {
+        Serial.println("Bus CAN démarré à 250 kb/s");
+    } else {
+        Serial.println("Erreur lors du démarrage du bus CAN");
     }
-    Serial.println("[CAN] Bus démarré !");
-    sendCurrentCommand(TARGET_CURRENT);  // Envoi initial à 55A
 }
 
 void loop() {
-    static uint32_t lastTempCheck = 0;
+    static uint32_t lastSendTime = 0;
     uint32_t currentTime = millis();
 
-    // Lecture des trames CAN
-    if (ESP32Can.readFrame(rxFrame, 100)) {
-        if (rxFrame.identifier == INFO_FRAME_ID) {
-            // Trame 0x051 (infos standard)
-            internalTemp = (rxFrame.data[2] << 8) | rxFrame.data[3];
-            overTempFlag = (rxFrame.data[4] & 0x02) >> 1;
-            Serial.printf("[CAN] Reçu - Temp: %d°C\n", internalTemp);
-        }
-        else if (rxFrame.identifier == CONFIG_FRAME_ID && configRequested) {
-            // Trame 0x052 (config) reçue après demande
-            systemConfig.baudrate = rxFrame.data[0];
-            systemConfig.numberDCDC = rxFrame.data[1];
-            systemConfig.rampSetting = rxFrame.data[2];
-            systemConfig.currentLimit = rxFrame.data[3];
-            systemConfig.maxCurrent = (rxFrame.data[4] << 8) | rxFrame.data[5];
-            systemConfig.softwareRevision = rxFrame.data[6];
-
-            Serial.println("[CONFIG] Données reçues :");
-            Serial.printf("  - Baudrate: %d (1=125kbps, 2=250kbps, 3=500kbps)\n", systemConfig.baudrate);
-            Serial.printf("  - Nombre de DCDC: %d\n", systemConfig.numberDCDC);
-            Serial.printf("  - Ramp setting: %d°C\n", systemConfig.rampSetting);
-            Serial.printf("  - Current limit: %dA\n", systemConfig.currentLimit);
-            Serial.printf("  - Max current: %dA\n", systemConfig.maxCurrent);
-            Serial.printf("  - Software revision: v%d\n", systemConfig.softwareRevision);
-
-            configRequested = false;  // Reset du flag après réception
-            sendCurrentCommand(currentCommand, false);  // Ré-envoi sans demande de config
-        }
+    // Envoi de la trame RX_CONTROL toutes les secondes
+    if (currentTime - lastSendTime >= 1000) {
+        lastSendTime = currentTime;
+        sendControlFrame();
     }
 
-    // Gestion thermique (identique)
-    if (currentTime - lastTempCheck >= TEMP_CHECK_DELAY) {
-        lastTempCheck = currentTime;
-        if (internalTemp > TEMP_THRESHOLD && currentCommand > 0) {
-            currentCommand = max(currentCommand - CURRENT_DECREMENT, 0);
-            sendCurrentCommand(currentCommand);
-        } 
-        else if (internalTemp <= TEMP_THRESHOLD && currentCommand < TARGET_CURRENT) {
-            currentCommand = TARGET_CURRENT;
-            sendCurrentCommand(currentCommand);
+    // Lecture des trames entrantes
+    if (ESP32Can.readFrame(rxFrame, 10)) {
+        // Vérification de l'ID de la trame reçue
+        if (rxFrame.identifier == 0x51) { // TX_INFORMATIONS
+            decodeTxInformations(rxFrame);
+        } else if (rxFrame.identifier == 0x52) { // TX_CONFIG
+            decodeTxConfig(rxFrame);
         }
-    }
-
-    // Arrêt d'urgence (identique)
-    if (internalTemp >= TEMP_CRITICAL || overTempFlag) {
-        Serial.println("[URGENCE] Arrêt pour surchauffe !");
-        sendCurrentCommand(0);
-        while(1);
-    }
-
-    // Exemple : Demander la config toutes les 30s (pour test)
-    static uint32_t lastConfigRequest = 0;
-    if (currentTime - lastConfigRequest >= 30000) {
-        lastConfigRequest = currentTime;
-        requestConfiguration();
     }
 }

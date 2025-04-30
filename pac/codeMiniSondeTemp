@@ -1,3 +1,67 @@
+//Code pour les 10 : 
+
+// Alimenter en 3.3V
+
+const int thermistorPins[10] = {34, 35, 32, 33, 25, 27, 26, 14, 12, 13};
+const int numThermistors = 10;
+
+const float seriesResistor = 10000.0;           // Résistance fixe (10kΩ)
+const float nominalResistance = 10000.0;        // NTC à 25°C (10kΩ)
+const float nominalTemperature = 25.0;          // en °C
+const float bCoefficient = 3950;                // Coefficient B
+const int adcMax = 4095;                        // ADC 12 bits ESP32
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Lecture de température via 10 NTC...");
+}
+
+void loop() {
+  for (int i = 0; i < numThermistors; i++) {
+    int pin = thermistorPins[i];
+    int adcValue = analogRead(pin);
+    float voltage = adcValue * 3.3 / adcMax;
+
+    Serial.println("------------");
+    Serial.print("Thermistance sur pin GPIO ");
+    Serial.println(pin);
+
+    if (voltage < 0.01) {
+      Serial.println(" Tension trop basse : vérifie le câblage !");
+      continue;
+    }
+
+    float resistance = seriesResistor * (voltage / (3.3 - voltage));
+
+    float steinhart;
+    steinhart = resistance / nominalResistance;
+    steinhart = log(steinhart);
+    steinhart /= bCoefficient;
+    steinhart += 1.0 / (nominalTemperature + 273.15);
+    steinhart = 1.0 / steinhart;
+    steinhart -= 273.15;
+
+    Serial.print("ADC brut : ");
+    Serial.println(adcValue);
+    Serial.print("Tension : ");
+    Serial.print(voltage, 3);
+    Serial.println(" V");
+    Serial.print("Résistance NTC : ");
+    Serial.print(resistance, 1);
+    Serial.println(" Ohms");
+    Serial.print("Température : ");
+    Serial.print(steinhart, 2);
+    Serial.println(" °C");
+  }
+
+  Serial.println("======= Fin de lecture =======\n");
+  delay(3000); // Pause entre chaque cycle de lecture
+}
+
+
+
+//Code pour une sonde : 
 // Alimenter en 3.3V
 
 const int thermistorPin = 13;  

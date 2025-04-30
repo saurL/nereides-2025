@@ -1,8 +1,8 @@
 // Alimenter en 3.3V
 
-const int thermistorPin = 4;  
-const float seriesResistor = 100000.0;  
-const float nominalResistance = 100000.0; 
+const int thermistorPin = 13;  
+const float seriesResistor = 10000.0;  
+const float nominalResistance = 10000.0; 
 const float nominalTemperature = 25.0; 
 const float bCoefficient = 3950;
 const int adcMax = 4095; // ADC 12 bits pour ESP32 (par défaut)
@@ -23,7 +23,7 @@ void loop() {
     return;
   }
 
-  float resistance = seriesResistor * (3.3 / voltage - 1);
+float resistance = seriesResistor * (voltage / (3.3 - voltage));
 
   float steinhart;
   steinhart = resistance / nominalResistance;
@@ -47,4 +47,5 @@ void loop() {
   Serial.println(" °C");
 
   delay(2000);
+}
 }

@@ -1,0 +1,58 @@
+#include <Wire.h>
+
+#define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
+
+// Structure complète reçue depuis le maître
+struct BatteryRaw {
+  float chargeVoltage;
+  float chargeCurrentLimit;
+  float dischargeCurrentLimit;
+  uint16_t soc;
+  uint16_t soh;
+  float moduleVoltage;
+  float totalCurrent;
+  float avgTemperature;
+  uint8_t prot1;
+  uint8_t prot2;
+  uint8_t alarm1;
+  uint8_t alarm2;
+  uint8_t moduleCount;
+  uint8_t flags;
+};
+
+BatteryRaw receivedData;
+
+void receiveEvent(int numBytes) {
+  
+    Wire.readBytes((char*)&receivedData, sizeof(BatteryRaw));
+    
+    // Affichage dans le moniteur série
+    Serial.println("<< Données batterie reçues :");
+    Serial.print("  Charge voltage: "); Serial.println(receivedData.chargeVoltage);
+    Serial.print("  Charge current limit: "); Serial.println(receivedData.chargeCurrentLimit);
+    Serial.print("  Discharge current limit: "); Serial.println(receivedData.dischargeCurrentLimit);
+    Serial.print("  SOC: "); Serial.println(receivedData.soc);
+    Serial.print("  SOH: "); Serial.println(receivedData.soh);
+    Serial.print("  Module voltage: "); Serial.println(receivedData.moduleVoltage);
+    Serial.print("  Total current: "); Serial.println(receivedData.totalCurrent);
+    Serial.print("  Avg temperature: "); Serial.println(receivedData.avgTemperature);
+    Serial.print("  Protection1: "); Serial.println(receivedData.prot1);
+    Serial.print("  Protection2: "); Serial.println(receivedData.prot2);
+    Serial.print("  Alarm1: "); Serial.println(receivedData.alarm1);
+    Serial.print("  Alarm2: "); Serial.println(receivedData.alarm2);
+    Serial.print("  Module count: "); Serial.println(receivedData.moduleCount);
+    Serial.print("  Flags: "); Serial.println(receivedData.flags);
+    Serial.println("--------------------------");
+  
+}
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(SLAVE_ADDRESS);  // Démarrer en tant qu’esclave
+  Wire.onReceive(receiveEvent);
+  Serial.println("Esclave I2C prêt à recevoir les données...");
+}
+
+void loop() {
+  // Boucle vide : tout se passe dans receiveEvent
+}

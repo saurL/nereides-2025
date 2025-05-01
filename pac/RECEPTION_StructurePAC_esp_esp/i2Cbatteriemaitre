@@ -6,7 +6,7 @@
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
 
 CanFrame rxFrame;
-
+//pas oublier de mettre resistance 120 ohm pour le can de la batterie 
 // Variables complètes à transmettre
 struct BatteryRaw {
   float chargeVoltage = 0;

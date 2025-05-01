@@ -1,6 +1,7 @@
 #include <Wire.h>
 
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
+//pas oublier de mettre resistance 120 ohm pour le can de la batterie 
 
 // Structure complète reçue depuis le maître
 struct BatteryRaw {

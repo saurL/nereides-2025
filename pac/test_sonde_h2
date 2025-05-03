@@ -1,0 +1,19 @@
+#define RELAY_PIN 5      // P4 = GPIO4 (commande relais)
+#define SWITCH_PIN 16    // P16 = GPIO16 (interrupteur)
+
+void setup() {
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // électrovanne OFF au démarrage
+
+  pinMode(SWITCH_PIN, INPUT_PULLUP);  // interrupteur entre GPIO et GND
+}
+
+void loop() {
+  if (digitalRead(SWITCH_PIN) == LOW) {
+    // Interrupteur fermé (ON) → activer le relais
+    digitalWrite(RELAY_PIN, HIGH);  // électrovanne ON
+  } else {
+    // Interrupteur ouvert (OFF) → désactiver le relais
+    digitalWrite(RELAY_PIN, LOW);   // électrovanne OFF
+  }
+}

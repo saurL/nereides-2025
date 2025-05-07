@@ -7,11 +7,23 @@
 #define CAN_RX 22
 #define TX_PIN 17  // Broche TX pour UART1
 #define RX_PIN 16  // Broche RX pour UART1
+#define BUTTON_PIN   14  // Broche d'entrée pour le bouton qui contrôle la puissance des ventilos
+
 const int transistorPinCapteurH2 = 26; // Pin allumage led cpateur H2
 const int transistorPinTemperature = 25; // pin allumage led temperature depassee
 const int transistorPinMoteur = 27; // attention à définir (moteur allume)
 const int transistorPinPAC = 33 ; // attention à définir
 
+//définition de la position initiale du bouton ventilos
+int buttonState = 0;       // État actuel du bouton
+bool isFanReduced = false; // Indicateur de mode de vitesse
+int fanSpeed = 255;        // Vitesse initiale du ventilateur (0-255, 100%)
+int lastButtonState = 0;   // Dernier état du bouton
+
+//dénition de paramètres pour le ventilo
+const int freq = 25000;    // Fréquence PWM en Hz
+const int pwmChannel = 0;  // Canal PWM
+const int resolution = 8;  // Résolution (8 bits = 0-255)
 
 
 HardwareSerial RaspberrySerial(1);
@@ -374,8 +386,16 @@ void setup() {
     pinMode(transistorPinTemperature, OUTPUT);
     pinMode(transistorPinMoteur, OUTPUT);
     pinMode(transistorPinPAC, OUTPUT);
+    // Config du bouton ventilos
+    pinMode(BUTTON_PIN, INPUT_PULLDOWN);
+    ledcSetup(pwmChannel, freq, resolution); // Configuration PWM
+    ledcAttachPin(FAN_PWM_PIN, pwmChannel);  // Attachement du PWM à la broche
+    // Initialiser la vitesse du ventilateur
+    ledcWrite(pwmChannel, fanSpeed);
+    // Initialisation du moniteur série
+    Serial.println("Programme de contrôle du ventilateur prêt.");
 
-    
+
     // Taille des queues (par défaut)
     ESP32Can.setRxQueueSize(5);
     ESP32Can.setTxQueueSize(5);
@@ -454,6 +474,30 @@ void loop() {
     }
     
     delay(10);
+
+//gestion vitesse ventilos selon position du bouton
+// Lire l'état du bouton
+buttonState = digitalRead(BUTTON_PIN);
+// Vérifier si le bouton est pressé (transition 0 -> 1)
+if (buttonState == HIGH && lastButtonState == LOW ) {
+  if (isFanReduced) {
+      fanSpeed = 255; // Pleine vitesse
+      isFanReduced = false;
+  } else {
+      fanSpeed = 153; // 60 % de 255
+      isFanReduced = true;
+    }
+  // Appliquer la nouvelle vitesse
+  ledcWrite(pwmChannel, fanSpeed);
+  Serial.print("Nouvelle vitesse du ventilateur : ");
+  Serial.println(fanSpeed);    
+  // Mettre à jour l'état précédent du bouton
+  lastButtonState = buttonState;
+}
+
+
+
+
 //allumage led temperature
    if MotorControllerData.controller_temp>70 {
     // Allumer la LED (activer le transistor)
@@ -481,12 +525,4 @@ void loop() {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinCapteurH2, HIGH);
    };
-
-
-   
-   
-
 }
-
-
-

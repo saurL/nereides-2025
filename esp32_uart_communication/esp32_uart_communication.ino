@@ -499,29 +499,29 @@ if (buttonState == HIGH && lastButtonState == LOW ) {
 
 
 //allumage led temperature
-   if MotorControllerData.controller_temp>70 {
+   if (MotorControllerData.controller_temp>70) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinTemperature, HIGH);
    };
-   if MotorControllerData.motor_temp>150 {
+   if (MotorControllerData.motor_temp>150) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinTemperature, HIGH);
    };
-   if FuelCellData.avgTemp>70 {
+   if (FuelCellData.avgTemp>70) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinTemperature, HIGH);
    };
-   if BatteryData.avgTemperature>60 {
+   if (BatteryData.avgTemperature>60) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinTemperature, HIGH);
    };
 
    //allumage led H2
-   if H2SensorsData.pacValue>90 {
+   if (H2SensorsData.pacValue>90) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinCapteurH2, HIGH);
    };
-   if H2SensorsData.bottlesValue>90 {
+   if (H2SensorsData.bottlesValue>90) {
     // Allumer la LED (activer le transistor)
     digitalWrite(transistorPinCapteurH2, HIGH);
    };

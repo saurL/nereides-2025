@@ -1,3 +1,4 @@
+// Code qui recoit les données de la batterie 48V en I2C : sur l esp CM !
 #include <Wire.h>
 
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave

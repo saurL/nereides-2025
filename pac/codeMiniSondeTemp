@@ -2,7 +2,7 @@
 
 // Alimenter en 3.3V
 
-const int thermistorPins[10] = {34, 35, 32, 33, 25, 27, 26, 14, 12, 13};
+const int thermistorPins[10] = {34, 35, 32, 33, 25, 27, 26, 14, 15, 13};
 const int numThermistors = 10;
 
 const float seriesResistor = 10000.0;           // Résistance fixe (10kΩ)

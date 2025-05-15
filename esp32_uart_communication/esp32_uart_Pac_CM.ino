@@ -519,7 +519,56 @@ void loop() {
     }
     
     delay(10);
+
+
+//gestion vitesse ventilos selon position du bouton
+// Lire l'état du bouton
+buttonState = digitalRead(BUTTON_PIN);
+// Vérifier si le bouton est pressé (transition 0 -> 1)
+if (buttonState == HIGH && lastButtonState == LOW ) {
+  if (isFanReduced) {
+      fanSpeed = 255; // Pleine vitesse
+      isFanReduced = false;
+  } else {
+      fanSpeed = 153; // 60 % de 255
+      isFanReduced = true;
+    }
+  // Appliquer la nouvelle vitesse
+  ledcWrite(pwmChannel, fanSpeed);
+  Serial.print("Nouvelle vitesse du ventilateur : ");
+  Serial.println(fanSpeed);    
+  // Mettre à jour l'état précédent du bouton
+  lastButtonState = buttonState;
 }
 
 
 
+
+//allumage led temperature
+   if (MotorControllerData.controller_temp>70) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinTemperature, HIGH);
+   };
+   if (MotorControllerData.motor_temp>150) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinTemperature, HIGH);
+   };
+   if (FuelCellData.avgTemp>70) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinTemperature, HIGH);
+   };
+   if (BatteryData.avgTemperature>60) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinTemperature, HIGH);
+   };
+
+   //allumage led H2
+   if (H2SensorsData.pacValue>90) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinCapteurH2, HIGH);
+   };
+   if (H2SensorsData.bottlesValue>90) {
+    // Allumer la LED (activer le transistor)
+    digitalWrite(transistorPinCapteurH2, HIGH);
+   };
+}

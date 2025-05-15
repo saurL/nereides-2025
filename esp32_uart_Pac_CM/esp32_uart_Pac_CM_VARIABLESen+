@@ -371,34 +371,42 @@ struct BmsData24V {
 
 //Fonction de décodage des trames recues du BMS 24V 
 void processReceivedData(uint8_t* data, uint32_t identifier) {
-    switch (identifier) {
-      case 0x18904001:
-        bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
-        bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
-        bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
-        bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
-        break;
-  
-      case 0x18914001:
-        bmsData24V.maxCellVoltage = (data[0] << 8) | data[1];
-        bmsData24V.maxCellNumber = data[2];
-        bmsData24V.minCellVoltage = (data[3] << 8) | data[4];
-        bmsData24V.minCellNumber = data[5];
-        break;
-  
-      case 0x18924001:
-        bmsData24V.maxTemp = data[0] - 40;
-        bmsData24V.minTemp = data[2] - 40;
-        break;
-  
-      case 0x18984001:
-        bmsData24V.errorStatus = 0;
-        for (int i = 0; i < 8; i++) {
-          bmsData24V.errorStatus |= ((uint64_t)data[i] << (8 * i));
-        }
-        break;
-    }
+  switch (identifier) {
+
+    //MESSAGE CAN BATTERIE 24V 
+    case 0x18904001:
+      bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
+      bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
+      bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
+      bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
+      send_data("baterySE_soc", bmsData24V.soc); 
+      send_data("batterySE_current_a", bmsData24V.current);
+      send_data("batterySE_voltage_v", bmsData24V.totalVoltage);
+      break;
+
+    case 0x18914001:
+      bmsData24V.maxCellVoltage = (data[0] << 8) | data[1];
+      bmsData24V.maxCellNumber = data[2];
+      bmsData24V.minCellVoltage = (data[3] << 8) | data[4];
+      bmsData24V.minCellNumber = data[5];
+      break;
+
+    case 0x18924001:
+      bmsData24V.maxTemp = data[0] - 40;
+      bmsData24V.minTemp = data[2] - 40;
+      send_data("batterySE_maxTemp_c", bmsData24V.maxTemp);
+      send_data("batterySE_minTemp_c", bmsData24V.minTemp);
+      break;
+
+    case 0x18984001:
+      bmsData24V.errorStatus = 0;
+      for (int i = 0; i < 8; i++) {
+        bmsData24V.errorStatus |= ((uint64_t)data[i] << (8 * i));
+      }
+      break;
   }
+}
+
 /////////////////////
 // méthodes controleur moteur 
 void dedecodeMessage1(const CanFrame &frame) {

@@ -340,6 +340,59 @@ void handle0x35C(const CanFrame& frame) {
     battery.flags = frame.data[0];
 }
 
+
+
+// Structure globale pour stocker les données BMS
+struct BmsData24V {
+    float totalVoltage = -1;
+    float gatherVoltage = -1;
+    float current = -1;
+    float soc = -1;
+  
+    uint16_t maxCellVoltage = 0;
+    uint8_t maxCellNumber = 0;
+    uint16_t minCellVoltage = 0;
+    uint8_t minCellNumber = 0;
+  
+    int8_t maxTemp = -100;
+    int8_t minTemp = -100;
+  
+    uint64_t errorStatus = 0;
+  };
+  
+  BmsData24V bmsData24V;
+
+
+//Fonction de décodage des trames recues du BMS 24V 
+void processReceivedData(uint8_t* data, uint32_t identifier) {
+    switch (identifier) {
+      case 0x18904001:
+        bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
+        bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
+        bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
+        bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
+        break;
+  
+      case 0x18914001:
+        bmsData24V.maxCellVoltage = (data[0] << 8) | data[1];
+        bmsData24V.maxCellNumber = data[2];
+        bmsData24V.minCellVoltage = (data[3] << 8) | data[4];
+        bmsData24V.minCellNumber = data[5];
+        break;
+  
+      case 0x18924001:
+        bmsData24V.maxTemp = data[0] - 40;
+        bmsData24V.minTemp = data[2] - 40;
+        break;
+  
+      case 0x18984001:
+        bmsData24V.errorStatus = 0;
+        for (int i = 0; i < 8; i++) {
+          bmsData24V.errorStatus |= ((uint64_t)data[i] << (8 * i));
+        }
+        break;
+    }
+  }
 /////////////////////
 // méthodes controleur moteur 
 void decodeMessage1(const CanFrame &frame) {
@@ -482,54 +535,59 @@ void loop() {
         break;
     case 0x35C:
         handle0x35C(rxFrame);
+        break;      
+            
+    case 0x0CF11E05:    //msg 1 du cm 
+        decodeMessage1(rxFrame);
         break;
-      
-            
-            case 0x0CF11E05:    //msg 1 du cm 
-                decodeMessage1(rxFrame);
-                break;
-            case 0x0CF11F05:    //msg 2 du cm 
-                decodeMessage2(rxFrame);
-                break;
+    case 0x0CF11F05:    //msg 2 du cm 
+        decodeMessage2(rxFrame);
+        break;
 
-              case 0x2FC0000: // État du système et informations générales
-                processSystemStateFrame(rxFrame);
-                break;
-                
-            case 0x2FC0001: // Courant et tension de la pile
-                processPowerDataFrame(rxFrame);
-                break;
-                
-            case 0x2FC0002: // Erreurs système
-                processErrorFrame(rxFrame);
-                break;
-                
-            case 0x2FC0003: // Temps opération et énergie produite
-                processRuntimeDataFrame(rxFrame);
-                break;
-                
-            case 0x2FC0004: // Temps opération total et énergie totale
-                processTotalRuntimeDataFrame(rxFrame);
-                break;
-            
-            case 0x091: 
-                processH2PressureFrame(rxFrame);
-                break; 
+        case 0x2FC0000: // État du système et informations générales
+        processSystemStateFrame(rxFrame);
+        break;
+        
+    case 0x2FC0001: // Courant et tension de la pile
+        processPowerDataFrame(rxFrame);
+        break;
+        
+    case 0x2FC0002: // Erreurs système
+        processErrorFrame(rxFrame);
+        break;
+        
+    case 0x2FC0003: // Temps opération et énergie produite
+        processRuntimeDataFrame(rxFrame);
+        break;
+        
+    case 0x2FC0004: // Temps opération total et énergie totale
+        processTotalRuntimeDataFrame(rxFrame);
+        break;
+    
+    case 0x091: 
+        processH2PressureFrame(rxFrame);
+        break; 
 
-            case 0x090: 
-                processAuxVoltageFrame(rxFrame);
-                break; 
-            case 0x305:
-                processH2SensorsFrame(rxFrame);
-                break;
+    case 0x090: 
+        processAuxVoltageFrame(rxFrame);
+        break; 
+    case 0x305:
+        processH2SensorsFrame(rxFrame);
+        break;
+    case 0x18904001:
+    case 0x18914001:
+    case 0x18924001:
+    case 0x18984001:
+        processReceivedData(rxFrame.data, rxFrame.identifier);
+        break;
 
-            default:
-                Serial.println("Unknown frame, printing raw data:");
-                for (int i = 0; i < rxFrame.data_length_code; i++) {
-                    Serial.printf("Data[%d]: 0x%02X\n", i, rxFrame.data[i]);
-                }
-                break;
+    default:
+        Serial.println("Unknown frame, printing raw data:");
+        for (int i = 0; i < rxFrame.data_length_code; i++) {
+            Serial.printf("Data[%d]: 0x%02X\n", i, rxFrame.data[i]);
         }
+        break;
+}
     }
     else {
         Serial.println("Timeout lecture CAN");

@@ -287,21 +287,15 @@ CanFrame rxFrame;
 
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
 
-// Définition des pins pour les thermistances
-const int thermistorPins[10] = {34, 35, 32, 33, 25, 27, 26, 14, 12, 13};
-const int numThermistors = 10;
-const float seriesResistor = 10000.0;           // Résistance fixe (10kΩ)
-const float nominalResistance = 10000.0;        // NTC à 25°C (10kΩ)
-const float nominalTemperature = 25.0;          // en °C
-const float bCoefficient = 3950;                // Coefficient B
-const int adcMax = 4095;                        // ADC 12 bits ESP32
+const int numThermistors = 10;  //nombre de sondes
+const int thermistorPins[numThermistors] = { 34, 35, 32, 33, 39, 36, 25, 27, 14, 26 };
 
-// Structure pour les données des thermistances
-struct ThermistorData {
-  float temperatures[10];        // Températures en °C
-};
 
-ThermistorData thermistorData;
+const float seriesResistor = 10000.0;     // Résistance fixe (10kΩ)
+const float nominalResistance = 10000.0;  // NTC à 25°C (10kΩ)
+const float nominalTemperature = 25.0;    // en °C
+const float bCoefficient = 3950;          // Coefficient B
+const int adcMax = 4095;
 
 // Structure complète reçue depuis le maître
 struct BatteryRaw {
@@ -370,10 +364,65 @@ struct MotorControllerData {
 // Instanciation globale
 MotorControllerData controllerData;
 
-// Identifiants CAN pour l'envoi des données des thermistances
-const uint32_t THERMISTOR_DATA1_ID = 0x0CF12E05;  // Pour les températures 0, 1, 2, 3
-const uint32_t THERMISTOR_DATA2_ID = 0x0CF12F05;  // Pour les températures 4,5,6,7
-const uint32_t THERMISTOR_DATA3_ID = 0x0CF13005; /// Pour les températures 8,9
+//envoie des sondes de température
+void readAndSendTemperatures() {
+  for (int i = 0; i < numThermistors; i++) {
+    int pin = thermistorPins[i];
+    int adcValue = analogRead(pin);
+    float voltage = adcValue * 3.3 / adcMax;
+
+    Serial.println("------------");
+    Serial.print("Thermistance sur pin GPIO ");
+    Serial.println(pin);
+
+    if (voltage < 0.01) {
+      Serial.println(" Tension trop basse : vérifie le câblage !");
+      continue;
+    }
+
+    float resistance = seriesResistor * (voltage / (3.3 - voltage));
+    float steinhart = resistance / nominalResistance;
+    steinhart = log(steinhart);
+    steinhart /= bCoefficient;
+    steinhart += 1.0 / (nominalTemperature + 273.15);
+    steinhart = 1.0 / steinhart;
+    steinhart -= 273.15;
+
+    Serial.print("ADC brut : ");
+    Serial.println(adcValue);
+    Serial.print("Tension : ");
+    Serial.print(voltage, 3);
+    Serial.println(" V");
+    Serial.print("Résistance NTC : ");
+    Serial.print(resistance, 1);
+    Serial.println(" Ohms");
+    Serial.print("Température : ");
+    Serial.print(steinhart);
+    Serial.println(" °C");
+
+    // Envoi en CAN
+    CanFrame txFrame;
+    txFrame.identifier = 0x600 + i;
+    txFrame.data_length_code = 8;
+    int16_t tempCenti = (int16_t)(steinhart * 100);
+
+    txFrame.data[0] = tempCenti >> 8;
+    txFrame.data[1] = tempCenti & 0xFF;
+    txFrame.data[2] = 0;
+    txFrame.data[3] = 0;
+    txFrame.data[4] = 0;
+    txFrame.data[5] = 0;
+    txFrame.data[6] = 0;
+    txFrame.data[7] = 0;
+
+    if (!ESP32Can.writeFrame(txFrame)) {
+      Serial.print("Erreur envoi trame 0x60");
+      Serial.println(i);
+    }
+  }
+
+  Serial.println("======= Fin de lecture =======\n");
+}
 
 
 //Fonction qui stocke les données recues par i2C de la batterie 48V directement dans la structure 
@@ -517,110 +566,6 @@ void processReceivedData(uint8_t* data, uint32_t identifier) {
       break;
   }
 }
-
-// Fonction pour lire les valeurs des thermistances et mettre à jour la structure
-void readThermistors() {
-  Serial.println("\n--- Lecture des thermistances ---");
-  
-  for (int i = 0; i < numThermistors; i++) {
-    int pin = thermistorPins[i];
-    uint16_t adcValue = analogRead(pin);
-    float voltage = adcValue * 3.3 / adcMax;
-    
-    if (voltage < 0.01) {
-      // Tension trop basse, probablement un problème de câblage
-      Serial.printf("Thermistance %d (pin %d): Tension trop basse (%.3f V), vérifie le câblage!\n", 
-                    i, pin, voltage);
-      thermistorData.temperatures[i] = -273.15;  // Valeur absurde pour indiquer une erreur
-      continue;
-    }
-    
-    // Calcul de la résistance
-    float resistance = seriesResistor * (voltage / (3.3 - voltage));
-    // Equation de Steinhart-Hart pour calculer la température
-    float steinhart = resistance / nominalResistance;
-    steinhart = log(steinhart);
-    steinhart /= bCoefficient;
-    steinhart += 1.0 / (nominalTemperature + 273.15);
-    steinhart = 1.0 / steinhart;
-    steinhart -= 273.15;
-    
-    thermistorData.temperatures[i] = steinhart;
-  }
-}
-
-// Fonction pour envoyer les données des thermistances via CAN
-void sendThermistorDataCAN() {
-  CanFrame frame;
-  frame.extd = 1;
-  frame.data_length_code = 8;
-  
-  // Premier message avec les températures 0-4
-  frame.identifier = THERMISTOR_DATA1_ID;
-  
-  // Conversion des températures en entiers (multiplié par 10 pour conserver une décimale)
-  int16_t temp0 = (int16_t)(thermistorData.temperatures[0] * 10);
-  int16_t temp1 = (int16_t)(thermistorData.temperatures[1] * 10);
-  int16_t temp2 = (int16_t)(thermistorData.temperatures[2] * 10);
-  int16_t temp3 = (int16_t)(thermistorData.temperatures[3] * 10);
-  
-  frame.data[0] = temp0 & 0xFF;
-  frame.data[1] = (temp0 >> 8) & 0xFF;
-  frame.data[2] = temp1 & 0xFF;
-  frame.data[3] = (temp1 >> 8) & 0xFF;
-  frame.data[4] = temp2 & 0xFF;
-  frame.data[5] = (temp2 >> 8) & 0xFF;
-  frame.data[6] = temp3 & 0xFF;
-  frame.data[7] = (temp3 >> 8) & 0xFF;
-  
-  if (ESP32Can.writeFrame(frame, 1000)) {
-    Serial.printf("Envoi données thermistances 0-3: ID = 0x%08X\n", THERMISTOR_DATA1_ID);
-  } else {
-    Serial.println("Échec de l'envoi des données thermistances 0-3");
-  }
-  
-  // Deuxième message avec les températures 4-7
-  frame.identifier = THERMISTOR_DATA2_ID;
-  
-  int16_t temp4 = (int16_t)(thermistorData.temperatures[4] * 10);
-  int16_t temp5 = (int16_t)(thermistorData.temperatures[5] * 10);
-  int16_t temp6 = (int16_t)(thermistorData.temperatures[6] * 10);
-  int16_t temp7 = (int16_t)(thermistorData.temperatures[7] * 10);
-  
-  frame.data[0] = temp4 & 0xFF;
-  frame.data[1] = (temp4 >> 8) & 0xFF;
-  frame.data[2] = temp5 & 0xFF;
-  frame.data[3] = (temp5 >> 8) & 0xFF;
-  frame.data[4] = temp6 & 0xFF;
-  frame.data[5] = (temp6 >> 8) & 0xFF;
-  frame.data[6] = temp7 & 0xFF;
-  frame.data[7] = (temp7 >> 8) & 0xFF;
-  
-  if (ESP32Can.writeFrame(frame, 1000)) {
-    Serial.printf("Envoi données thermistances 4-7: ID = 0x%08X\n", THERMISTOR_DATA2_ID);
-  } else {
-    Serial.println("Échec de l'envoi des données thermistances 4-7");
-  }
-  
-  // Troisième message avec les températures 8-9 et min/max
-  frame.identifier = THERMISTOR_DATA3_ID;
-  
-  int16_t temp8 = (int16_t)(thermistorData.temperatures[8] * 10);
-  int16_t temp9 = (int16_t)(thermistorData.temperatures[9] * 10);
-  
-  frame.data[0] = temp8 & 0xFF;
-  frame.data[1] = (temp8 >> 8) & 0xFF;
-  frame.data[2] = temp9 & 0xFF;
-  frame.data[3] = (temp9 >> 8) & 0xFF;
-
-  
-  if (ESP32Can.writeFrame(frame, 1000)) {
-    Serial.printf("Envoi données thermistances 8-9 et résumé: ID = 0x%08X\n", THERMISTOR_DATA3_ID);
-  } else {
-    Serial.println("Échec de l'envoi des données thermistances 8-9 et résumé");
-  }
-}
-
 void setup() {
   Serial.begin(115200);
   
@@ -647,11 +592,8 @@ void setup() {
 }
 
 void loop() {
-  // Lecture des thermistances
-  readThermistors();
-  
-  // Envoi des données des thermistances via CAN
-  sendThermistorDataCAN();
+  //sondes de temp de la batterie 24V 
+  readAndSendTemperatures();
   
   // Envoie des demandes de trames au BMS
   sendBms24VRequest(0x18900140);

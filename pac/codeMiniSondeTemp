@@ -2,11 +2,11 @@
 
 // Alimenter en 3.3V
 
-const int thermistorPins[10] = {34, 35, 32, 33, 25, 27, 26, 14, 15, 13};
-const int numThermistors = 10;
+const int thermistorPins[6] = {34, 35, 32, 33, 36,39};
+const int numThermistors = 6;
 
 const float seriesResistor = 10000.0;           // Résistance fixe (10kΩ)
-const float nominalResistance = 10000.0;        // NTC à 25°C (10kΩ)
+const float nominalResistance = 10000.0;      // NTC à 25°C (10kΩ)
 const float nominalTemperature = 25.0;          // en °C
 const float bCoefficient = 3950;                // Coefficient B
 const int adcMax = 4095;                        // ADC 12 bits ESP32

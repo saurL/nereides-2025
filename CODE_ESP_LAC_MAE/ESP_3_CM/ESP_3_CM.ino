@@ -281,8 +281,8 @@ void loop() {
 
 #include <Wire.h>
 #include <ESP32-TWAI-CAN.hpp>
-#define CAN_TX 22
-#define CAN_RX 21
+#define CAN_TX 5
+#define CAN_RX 4
 CanFrame rxFrame;
 
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave

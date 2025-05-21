@@ -194,7 +194,7 @@ void decodeMessage1(const CanFrame &frame) {
     Serial.print(" | ");
     Serial.print(frame.data[2], BIN);
     Serial.print(" | ");
-    Serial.print(frame.data[3] << 8) | frame.data[2], BIN);
+    Serial.print(controllerData.motor_current, BIN);
     Serial.print("\n");
 
 

@@ -189,15 +189,13 @@ else{
 void decodeMessage1(const CanFrame &frame) {
     controllerData.speed_rpm = (frame.data[1] << 8) | frame.data[0];
     controllerData.motor_current = ((frame.data[3] << 8) | frame.data[2]) / 10.0;
-    Serial.print("TRAME RECUE MOTEUR CURRENT : ");
+        Serial.print("TRAME RECUE MOTEUR CURRENT : ");
     Serial.print(frame.data[3], BIN);
     Serial.print(" | ");
     Serial.print(frame.data[2], BIN);
     Serial.print(" | ");
     Serial.print((frame.data[3] << 8) | frame.data[2]), BIN);
-    
     Serial.print("\n");
-    
 
 
     controllerData.battery_voltage = ((frame.data[5] << 8) | frame.data[4]) / 10.0;
@@ -255,6 +253,7 @@ void decodeMessage2(const CanFrame &frame) {
 }
 
 //Fonction pour demander l'envoie des trames au BMS 24V 
+/*
 void sendBms24VRequest(uint32_t identifier) {
   CanFrame frame;
   frame.identifier = identifier;
@@ -312,7 +311,7 @@ void processReceivedData(uint8_t* data, uint32_t identifier) {
       break;
   }
 }
-
+*/
 // Fonction pour lire les valeurs des thermistances et mettre à jour la structure
 void readThermistors() {
   Serial.println("\n--- Lecture des thermistances ---");
@@ -446,6 +445,7 @@ void loop() {
   
   
   // Envoie des demandes de trames au BMS
+  /*
   sendBms24VRequest(0x18900140);
   sendBms24VRequest(0x18910140);
   sendBms24VRequest(0x18920140);
@@ -453,6 +453,7 @@ void loop() {
   Serial.println("justeavant d envoyer");
   reformAndSendCANFrames();
   delay(50); // temps pour que les réponses CAN soient transmises
+  */
 
   // Lecture de toutes les trames entrantes
   while (ESP32Can.readFrame(rxFrame, 10)) {
@@ -464,7 +465,7 @@ void loop() {
       case 0x18914001:
       case 0x18924001:
       case 0x18984001:
-        processReceivedData(rxFrame.data, rxFrame.identifier);
+        //processReceivedData(rxFrame.data, rxFrame.identifier);
         break;
 
       // Trames CM

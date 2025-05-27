@@ -55,7 +55,7 @@ void loop() {
   Serial.println("====== Données BMS ======");
   Serial.print("Tension totale: "); Serial.print(bmsData24V.totalVoltage); Serial.println(" V");
   Serial.print("Tension collectée: "); Serial.print(bmsData24V.gatherVoltage); Serial.println(" V");
-  Serial.print("Courant: "); Serial.print(bmsData24V24V.current); Serial.println(" A");
+  Serial.print("Courant: "); Serial.print(bmsData24V.current); Serial.println(" A");
   Serial.print("SOC: "); Serial.print(bmsData24V.soc); Serial.println(" %");
 
   Serial.print("Cellule max: "); Serial.print(bmsData24V.maxCellVoltage); Serial.print(" mV (N° ");
@@ -87,7 +87,7 @@ void sendBms24VRequest(uint32_t identifier) {
   }
 }
 
-bool receiveBmsResponse(uint32_t expectedID) {
+bool receiveBms24VResponse(uint32_t expectedID) {
   CanFrame frame;
   if (ESP32Can.readFrame(frame, 1000)) {
     if (frame.identifier == expectedID && frame.data_length_code == 8) {

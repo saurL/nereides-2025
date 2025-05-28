@@ -76,8 +76,8 @@ MotorControllerData controllerData;
 
 //Fonction qui stocke les données recues par i2C de la batterie 48V directement dans la structure 
 void receiveEvent(int numBytes) {
-  if (numBytes == sizeof(BatteryRaw)) {
-    Wire.readBytes((char*)&bmsData48V, sizeof(BatteryRaw));
+  if (numBytes == sizeof(BatteryData)) {
+    Wire.readBytes((char*)&bmsData48V, sizeof(BatteryData));
     
     // Affichage dans le moniteur série
     Serial.println("<< Données batterie reçues :");

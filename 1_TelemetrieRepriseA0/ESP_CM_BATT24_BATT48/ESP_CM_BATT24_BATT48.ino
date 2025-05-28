@@ -8,7 +8,7 @@ CanFrame rxFrame;
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
 
 // Structure complète reçue depuis le maître
-struct BatteryRaw {
+struct BatteryData {
   float chargeVoltage;
   float chargeCurrentLimit;
   float dischargeCurrentLimit;
@@ -24,7 +24,7 @@ struct BatteryRaw {
   uint8_t moduleCount;
   uint8_t flags;
 };
-BatteryRaw bmsData48V;
+BatteryData bmsData48V;
 
 // Structure globale pour stocker les données BMS
 struct BmsData24V {

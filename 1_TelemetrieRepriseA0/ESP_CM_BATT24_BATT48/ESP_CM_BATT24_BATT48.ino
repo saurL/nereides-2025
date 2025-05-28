@@ -100,7 +100,7 @@ void receiveEvent(int numBytes) {
     Serial.print("Erreur : ");
     Serial.print(numBytes);
     Serial.println(" octets reçus au lieu de ");
-    Serial.println(sizeof(BatteryRaw));
+    Serial.println(sizeof(BatteryData));
   }
 }
 

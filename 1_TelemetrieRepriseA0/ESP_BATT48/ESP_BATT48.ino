@@ -4,8 +4,8 @@
 #include <ESP32-TWAI-CAN.hpp>
 #include <Wire.h>  // Pour I2C
 
-#define CAN_TX 5
-#define CAN_RX 4
+#define CAN_TX 4
+#define CAN_RX 5
 #define I2C_SLAVE_ADDRESS 0x08  // Adresse de l'esclave I2C
 
 CanFrame rxFrame;

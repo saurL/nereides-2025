@@ -49,6 +49,12 @@ class Multiplexer {
             const int adcMax = 4095;
             
             float voltage = adcValue * 3.3 / adcMax;
+            
+            if (voltage < 0.01) {
+                Serial.println(" Tension trop basse : vérifie le câblage !");
+                return (uint16_t)(0xFFFF);
+            }           
+            
             float resistance = seriesResistor * (voltage / (3.3 - voltage));
 
             float steinhart;

@@ -5,16 +5,6 @@
 #define CAN_TX 5
 #define CAN_RX 4
 
-/*struct Multplexer {
-    const int muxS0;
-    const int muxS1;
-    const int muxS2;
-    const int muxS3;
-    const int muxSIG;
-    const int numThermistors;
-}; // Entrée analogique de l’ESP32
-*/
-
 class Multiplexer {
     public:        
         int muxS0;

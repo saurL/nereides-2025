@@ -6,8 +6,8 @@
 #include <vector>
 
 // Pins CAN (à adapter selon votre configuration)
-#define CAN_TX 5
-#define CAN_RX 4
+#define CAN_TX 22
+#define CAN_RX 21
 const int numThermistors = 10;  //nombre de sondes
 float temperature[numThermistors] = {}; //stocker les valeurs des 10 sondes dans une liste
 #define TX_PIN 17  // Broche TX pour UART1

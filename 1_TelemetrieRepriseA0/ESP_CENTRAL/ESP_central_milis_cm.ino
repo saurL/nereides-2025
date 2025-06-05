@@ -66,6 +66,7 @@ std::vector<uint8_t> stringToBytes(const String& input) {
     return result;
 }
 
+
 /*
 void send_json(StaticJsonDocument<200>& json) {
     // Convertir en chaîne JSON
@@ -84,6 +85,8 @@ void send_json(StaticJsonDocument<200>& json) {
     // Envoi du VarInt (taille du JSON)
     RaspberrySerial.write(message.data(), message.size()); // Envoi de la taille du JSON
 }*/
+
+
 
 void send_json(StaticJsonDocument<200>& json) {
     // Convertir en chaîne JSON
@@ -122,6 +125,9 @@ void send_error(const String& error_name, const String& value) {
 
 
 CanFrame rxFrame;
+
+
+uint16_t temperatures24V[10]; // array regroupant les températures des thermistances de la Batterie 24V
 
 //Structure Batterie 48V 
 struct BatteryData {
@@ -372,6 +378,34 @@ void decodeMessage2(const CanFrame &frame) {
 
 }
 
+void minmax(const uint16_t arr[], int taille, uint16_t minMax[]) {
+    if (taille == 0) return; // Sécurité : tableau vide
+
+    uint16_t minVal = arr[0];
+    uint16_t maxVal = arr[0];
+
+    for (size_t i = 1; i < taille; ++i) {
+        if (arr[i] < minVal) minVal = arr[i];
+        if (arr[i] > maxVal) maxVal = arr[i];
+    }
+
+    minMax[0] = minVal;
+    minMax[1] = maxVal;
+}
+
+
+void decodeTemperature24V(const CanFrame &frame) {
+    uint16_t temperature = (frame.data[0] << 8) | frame.data[1];
+    uint8_t idTrame = frame.identifier - 0x600;
+    temperatures24V[idTrame] = temperature;
+    if (idTrame == 9) {
+        uint16_t minMax[2];
+        minmax(temperatures24V, 9, minMax);
+        send_data("max_temp24V", minMax[0]);
+        send_data("min_temp24V", minMax[1]);
+    }
+    Serial.printf("Thermistance numero %u, la temperature est de %u", idTrame, temperature);
+}
 
 
 void setup() {

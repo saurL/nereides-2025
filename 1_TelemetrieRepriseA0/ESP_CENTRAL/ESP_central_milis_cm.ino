@@ -256,6 +256,8 @@ void processReceivedData1890(uint8_t* data, uint32_t identifier) {
       bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
       bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
       bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
+      send_data("battery24_soc", bmsData24V.soc);
+      send_data("battery24_current",bmsData24V.current );
       Serial.println("SOC");
       Serial.println(bmsData24V.soc);
       
@@ -266,6 +268,8 @@ void processReceivedData1891(uint8_t* data, uint32_t identifier) {
       bmsData24V.maxCellNumber = data[2];
       bmsData24V.minCellVoltage = (data[3] << 8) | data[4];
       bmsData24V.minCellNumber = data[5];
+      send_data("battery24_maxCellVoltage", bmsData24V.maxCellVoltage);
+      send_data("battery24_minCellVoltage", bmsData24V.minCellVoltage);
       Serial.println("CellVolt");
       Serial.println(bmsData24V.maxCellVoltage);
       Serial.flush();
@@ -273,6 +277,8 @@ void processReceivedData1891(uint8_t* data, uint32_t identifier) {
 void processReceivedData1892(uint8_t* data, uint32_t identifier) {
       bmsData24V.maxTemp = data[0] - 40;
       bmsData24V.minTemp = data[2] - 40;
+      send_data("battery24_maxTemp", bmsData24V.maxTemp );
+      send_data("battery24_minTemp", bmsData24V.minTemp);
       Serial.println("max_temp");
       Serial.println(bmsData24V.maxTemp);
       Serial.println("min_temp");

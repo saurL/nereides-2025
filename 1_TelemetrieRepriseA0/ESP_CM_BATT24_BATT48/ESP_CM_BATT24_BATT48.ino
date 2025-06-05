@@ -7,6 +7,94 @@ CanFrame rxFrame;
 
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
 
+
+class Multiplexer {
+    public:        
+        int muxS0;
+        int muxS1;
+        int muxS2;
+        int muxS3;
+        int muxSIG;
+        int numThermistors;
+        Multiplexer(int S0, int S1, int S2, int S3, int SIG, int num) {
+
+            // assignation des attributs de l'instance
+
+            this-> muxS0 = S0;
+            this-> muxS1 = S1;
+            this-> muxS2 = S2;
+            this-> muxS3 = S3;
+            this-> muxSIG = SIG;
+            this-> numThermistors = num;            
+
+            // Configuration des broches de sélection du multiplexeur
+            pinMode(this-> muxS0, OUTPUT);
+            pinMode(this-> muxS1, OUTPUT);
+            pinMode(this-> muxS2, OUTPUT);
+            pinMode(this-> muxS3, OUTPUT);
+        }
+
+        uint16_t* getTemperatures() {
+            uint16_t* temperatures = new uint16_t[this-> numThermistors];
+            for (int i = 0; i < this-> numThermistors; i++) {
+                uint16_t temp = this-> getTemperature(i);
+                temperatures[i] = temp;
+                Serial.printf("Thermistance numero %u, temperature de %u \n", i, temp);
+            }
+            return temperatures;
+        }
+
+    private:
+        uint16_t convertAnalogToTemp(float adcValue) {
+            // === Constantes pour le calcul de température ===
+            const float seriesResistor = 10000.0;
+            const float nominalResistance = 10000.0;
+            const float nominalTemperature = 25.0;
+            const float bCoefficient = 3950;
+            const int adcMax = 4095;
+            
+            float voltage = adcValue * 3.3 / adcMax;
+            
+            if (voltage < 0.01) {
+                Serial.println(" Tension trop basse : vérifie le câblage !");
+                return (uint16_t)(0xFFFF);
+            }           
+            
+            float resistance = seriesResistor * (voltage / (3.3 - voltage));
+
+            float steinhart;
+            steinhart = resistance / nominalResistance;
+            steinhart = log(steinhart);
+            steinhart /= bCoefficient;
+            steinhart += 1.0 / (nominalTemperature + 273.15);
+            steinhart = 1.0 / steinhart;
+            steinhart -= 273.15;
+            
+
+            return (uint16_t)(steinhart * 100);
+        }
+
+        void selectMuxChannel(int channel) {
+            digitalWrite(this-> muxS0, bitRead(channel, 0));
+            digitalWrite(this-> muxS1, bitRead(channel, 1));
+            digitalWrite(this-> muxS2, bitRead(channel, 2));
+            digitalWrite(this-> muxS3, bitRead(channel, 3));
+        }
+
+        uint16_t getTemperature(int channel) {
+            selectMuxChannel(channel);
+            delay(5);  // Court délai pour stabiliser le signal
+            int adcValue = analogRead(muxSIG);
+            
+            float steinhart = convertAnalogToTemp(adcValue);
+            
+            return steinhart;
+            
+        }
+};
+
+    Multiplexer multiplexeur1(16, 17, 18, 19, 34, 10);
+
 // Structure complète reçue depuis le maître
 struct BatteryData {
   float chargeVoltage;
@@ -275,9 +363,11 @@ void processReceivedData1892(uint8_t* data, uint32_t identifier) {
     
   }
 
+    
 void setup() {
   Serial.begin(115200);
   
+
   
   Wire.begin(SLAVE_ADDRESS);  
   Wire.onReceive(receiveEvent);
@@ -299,54 +389,72 @@ void setup() {
 unsigned long lastRequestTime = 0;
 
 void loop() {
-  // Lecture des trames entrantes à chaque itération
-  while (ESP32Can.readFrame(rxFrame, 0)) {  // Pas de délai d’attente
-    Serial.printf("\n[CAN] Received frame: 0x%08X, DLC=%d\n", rxFrame.identifier, rxFrame.data_length_code);
-
-    switch (rxFrame.identifier) {
-      // Réponses du BMS 24V
-      case 0x18904001:
-        processReceivedData1890(rxFrame.data, rxFrame.identifier);
-        break;
-      case 0x18914001:
-        processReceivedData1891(rxFrame.data, rxFrame.identifier);
-        break;
-      case 0x18924001:
-        processReceivedData1892(rxFrame.data, rxFrame.identifier);
-        break;
-      case 0x18984001:
-        processReceivedData1898(rxFrame.data, rxFrame.identifier);
-        break;
-
-      // Trames CM
-      case 0x0CF11E05:
-        decodeMessage1(rxFrame);
-        break;
-      case 0x0CF11F05:
-        decodeMessage2(rxFrame);
-        break;
-
-      // Autres (tu peux activer ça pour debug)
-      default:
-        /*
-        Serial.println("Unknown frame, printing raw data:");
-        for (int i = 0; i < rxFrame.data_length_code; i++) {
-          Serial.printf("Data[%d]: 0x%02X\n", i, rxFrame.data[i]);
-        }
-        */
-        break;
+    uint16_t* temperatures = multiplexeur1.getTemperatures();
+      for (int i = 0; i < multiplexeur1.numThermistors; i++) {
+          CanFrame txFrame;
+          txFrame.identifier = 0x600 + i;
+          txFrame.data_length_code = 8;
+  
+          txFrame.data[0] = (temperatures[i] >> 8) & 0xFF ;
+          txFrame.data[1] = temperatures[i]  & 0xFF;
+  
+          if (!ESP32Can.writeFrame(txFrame)) {
+              Serial.printf("Erreur envoi trame 0x60%d \n", i);
+          }
+          else {
+              Serial.printf("Reussite envoi trame 0x60%d \n", i);
+          }
+          delay(10);
+      }
+      delete[] temperatures;
+    // Lecture des trames entrantes à chaque itération
+    while (ESP32Can.readFrame(rxFrame, 0)) {  // Pas de délai d’attente
+      Serial.printf("\n[CAN] Received frame: 0x%08X, DLC=%d\n", rxFrame.identifier, rxFrame.data_length_code);
+  
+      switch (rxFrame.identifier) {
+        // Réponses du BMS 24V
+        case 0x18904001:
+          processReceivedData1890(rxFrame.data, rxFrame.identifier);
+          break;
+        case 0x18914001:
+          processReceivedData1891(rxFrame.data, rxFrame.identifier);
+          break;
+        case 0x18924001:
+          processReceivedData1892(rxFrame.data, rxFrame.identifier);
+          break;
+        case 0x18984001:
+          processReceivedData1898(rxFrame.data, rxFrame.identifier);
+          break;
+  
+        // Trames CM
+        case 0x0CF11E05:
+          decodeMessage1(rxFrame);
+          break;
+        case 0x0CF11F05:
+          decodeMessage2(rxFrame);
+          break;
+  
+        // Autres (tu peux activer ça pour debug)
+        default:
+          /*
+          Serial.println("Unknown frame, printing raw data:");
+          for (int i = 0; i < rxFrame.data_length_code; i++) {
+            Serial.printf("Data[%d]: 0x%02X\n", i, rxFrame.data[i]);
+          }
+          */
+          break;
+      }
     }
-  }
-
-  // Envoie des requêtes toutes les 2 secondes
-  if (millis() - lastRequestTime >= 2000) {
-    Serial.println("envoiiiii");
-    sendBms24VRequest(0x18900140);
-    sendBms24VRequest(0x18910140);
-    sendBms24VRequest(0x18920140);
-    sendBms24VRequest(0x18980140);
-    reformAndSendCANFrames();
-    lastRequestTime = millis();
-  }
-  // Pas de delay(1000), laisse le CPU libre pour lire les trames
+  
+    // Envoie des requêtes toutes les 2 secondes
+    if (millis() - lastRequestTime >= 2000) {
+      Serial.println("envoiiiii");
+      sendBms24VRequest(0x18900140);
+      sendBms24VRequest(0x18910140);
+      sendBms24VRequest(0x18920140);
+      sendBms24VRequest(0x18980140);
+      reformAndSendCANFrames();
+      lastRequestTime = millis();
+    }
+    // Pas de delay(1000), laisse le CPU libre pour lire les trames
 }

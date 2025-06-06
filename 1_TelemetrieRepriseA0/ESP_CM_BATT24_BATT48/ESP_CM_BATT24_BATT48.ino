@@ -397,8 +397,8 @@ void loop() {
   
           txFrame.data[0] = (temperatures[i] >> 8) & 0xFF ;
           txFrame.data[1] = temperatures[i]  & 0xFF;
-  
-          if (!ESP32Can.writeFrame(txFrame)) {
+
+          if (!ESP32Can.writeFrame(txFrame, 1000)) {
               Serial.printf("Erreur envoi trame 0x60%d \n", i);
           }
           else {

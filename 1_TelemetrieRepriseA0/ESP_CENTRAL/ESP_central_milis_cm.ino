@@ -263,6 +263,7 @@ void processReceivedData1890(uint8_t* data, uint32_t identifier) {
       bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
       bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
       send_data("battery24_soc", bmsData24V.soc);
+      send_data("battery24_voltage",bmsData24V.totalVoltage);
       send_data("battery24_current",bmsData24V.current );
       Serial.println("SOC");
       Serial.println(bmsData24V.soc);

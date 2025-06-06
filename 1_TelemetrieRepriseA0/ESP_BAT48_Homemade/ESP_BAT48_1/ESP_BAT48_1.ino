@@ -123,7 +123,7 @@ void sendBms24VRequest(uint32_t identifier) {
 // === UART ENVOI VERS SLAVE ===
 void sendBmsDataOverUART() {
   // Exemple d'encodage JSON simple
-  String json = "{";
+  String json = "{ \"Data\": BMS";
   json += "\"V\":" + String(bmsData24V.totalVoltage, 1) + ",";
   json += "\"I\":" + String(bmsData24V.current, 1) + ",";
   json += "\"SOC\":" + String(bmsData24V.soc, 1) + ",";
@@ -136,7 +136,7 @@ void sendBmsDataOverUART() {
 
 void sendTemperaturesOverUART() {
     uint16_t* temperatures = multiplexeur1.getTemperatures();    
-    String json = "{";
+    String json = "{\"Data\": Temps";
     for (int i = 0; i < multiplexeur1.numThermistors; i++) {
         json += "\"Temp" + String(i) + "\":" + String(temperatures[i])
         if (i != multiplexeur.numThermistors - 1) json += ",";

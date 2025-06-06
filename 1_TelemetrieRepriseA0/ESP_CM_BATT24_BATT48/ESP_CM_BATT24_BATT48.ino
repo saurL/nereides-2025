@@ -92,8 +92,8 @@ class Multiplexer {
             
         }
 };
-
-    Multiplexer multiplexeur1(16, 17, 18, 19, 34, 10);
+ 
+    Multiplexer multiplexeur1(12, 14, 27, 26, 32, 10);
 
 // Structure complète reçue depuis le maître
 struct BatteryData {

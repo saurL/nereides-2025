@@ -401,8 +401,8 @@ void decodeTemperature24V(const CanFrame &frame) {
     if (idTrame == 9) {
         uint16_t minMax[2];
         minmax(temperatures24V, 9, minMax);
-        send_data("max_temp24V", minMax[0]);
-        send_data("min_temp24V", minMax[1]);
+        send_data("battery24_therm_max", minMax[0]);
+        send_data("battery24_therm_min", minMax[1]);
     }
     Serial.printf("Thermistance numero %u, la temperature est de %u", idTrame, temperature);
 }

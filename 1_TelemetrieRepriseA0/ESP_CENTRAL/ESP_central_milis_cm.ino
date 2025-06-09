@@ -5,6 +5,9 @@
 #include <ArduinoJson.h>
 #include <vector>
 
+//définition pin led alerte température
+#define LED_PIN 2
+
 // Pins CAN (à adapter selon votre configuration)
 #define CAN_TX 22
 #define CAN_RX 21
@@ -434,6 +437,22 @@ void setup() {
 }
 
 void loop() {
+
+    // Vérification des seuils pour allumer la LED
+    if (battery.avgTemperature > 60)           // **Condition pour batterie**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+    }
+
+    
+    if (controllerData.controller_temp > 70)// **Condition pour contrôleur moteur**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
        
     while (ESP32Can.readFrame(rxFrame, 0)) {  // Pas de délai d’attente
     Serial.printf("\n[CAN] Received frame: 0x%08X, DLC=%d\n", rxFrame.identifier, rxFrame.data_length_code);

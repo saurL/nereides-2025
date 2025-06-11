@@ -164,8 +164,8 @@ struct BmsData24V {
   uint16_t minCellVoltage = 0;
   uint8_t minCellNumber = 0;
 
-  int8_t maxTemp = -100;
-  int8_t minTemp = -100;
+  int8_t maxTemp = -100;// en °C
+  int8_t minTemp = -100; // en °C
 
   uint64_t errorStatus = 0;
 };
@@ -448,6 +448,20 @@ void loop() {
 
     
     if (controllerData.controller_temp > 70)// **Condition pour contrôleur moteur**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
+
+     if (bmsData24V.minTemp > 60)// **temp thermi**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
+
+    if (bmsData24V.maxTemp > 60)// **temp thermi**
         { 
         digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
     } else {

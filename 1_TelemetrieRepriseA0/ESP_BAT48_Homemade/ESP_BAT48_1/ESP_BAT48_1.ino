@@ -135,11 +135,11 @@ void sendBmsDataOverUART() {
 }
 
 void sendTemperaturesOverUART() {
-    uint16_t* temperatures = multiplexeur1.getTemperatures();    
-    String json = "{\"Data\":\"Temperatures\", \"ThermistorNumber\":" + String(multiplexeur1.numThermistors) + ",";
-    for (int i = 0; i < multiplexeur1.numThermistors; i++) {
-        json += String(i) + ":" + String(temperatures[i])
-        if (i != multiplexeur.numThermistors - 1) json += ",";
+    uint16_t* temperatures = multiplexer.getTemperatures();    
+    String json = "{\"Data\":\"Temperatures\", \"ThermistorNumber\":" + String(multiplexer.numThermistors) + ",";
+    for (int i = 0; i < multiplexer.numThermistors; i++) {
+        json += String(i) + ":" + String(temperatures[i]);
+        if (i != multiplexer.numThermistors - 1) json += ",";
     }
     json += "}\n";
     delete[] temperatures;    

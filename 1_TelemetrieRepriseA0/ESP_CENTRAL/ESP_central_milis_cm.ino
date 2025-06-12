@@ -439,7 +439,7 @@ void setup() {
 void loop() {
 
     // Vérification des seuils pour allumer la LED
-    if (battery.avgTemperature > 60)           // **Condition pour batterie**
+    if (battery.avgTemperature > 54)           // **Condition pour batterie**
         { 
         digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
     } else {
@@ -447,21 +447,21 @@ void loop() {
     }
 
     
-    if (controllerData.controller_temp > 70)// **Condition pour contrôleur moteur**
+    if (controllerData.controller_temp > 63)// **Condition pour contrôleur moteur**
         { 
         digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
     } else {
         digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
         }
 
-     if (bmsData24V.minTemp > 60)// **temp thermi**
+     if (bmsData24V.minTemp > 54)// **temp thermi**
         { 
         digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
     } else {
         digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
         }
 
-    if (bmsData24V.maxTemp > 60)// **temp thermi**
+    if (bmsData24V.maxTemp > 54)// **temp thermi**
         { 
         digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
     } else {

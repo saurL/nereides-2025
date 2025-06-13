@@ -255,7 +255,7 @@ else{
 //Fonctions pour recevoir et stocker les données du CM dans la structure controllerData
 void decodeMessage1(const CanFrame &frame) {
     controllerData.speed_rpm = (frame.data[1] << 8) | frame.data[0];
-    controllerData.motor_current = ((frame.data[3] << 8) | frame.data[2]) / 10.0;
+    controllerData.motor_current = ((frame.data[3] << 8) | frame.data[2]) / 10.0 - 2000;
     controllerData.battery_voltage = ((frame.data[5] << 8) | frame.data[4]) / 10.0;
     controllerData.error_code = (frame.data[7] << 8) | frame.data[6];
 

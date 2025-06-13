@@ -122,17 +122,33 @@ void sendBms24VRequest(uint32_t identifier) {
 }
 // === UART ENVOI VERS SLAVE ===
 void sendBmsDataOverUART() {
-  // Exemple d'encodage JSON simple
-  String json = "{ \"Data\": \"BMS\"";
-  json += "\"V\":" + String(bmsData24V.totalVoltage, 1) + ",";
-  json += "\"I\":" + String(bmsData24V.current, 1) + ",";
-  json += "\"SOC\":" + String(bmsData24V.soc, 1) + ",";
-  json += "\"Tmax\":" + String(bmsData24V.maxTemp) + ",";
-  json += "\"Tmin\":" + String(bmsData24V.minTemp);
+  // Construit un JSON simple mais complet
+  String json = "{";
+  json += "\"Data\":\"BMS\",";
+  // Tensions
+  json += "\"V_total\":"  + String(bmsData24V.totalVoltage, 1)  + ",";
+  json += "\"V_gather\":" + String(bmsData24V.gatherVoltage, 1) + ",";
+  // Courant & SOC
+  json += "\"I\":"   + String(bmsData24V.current, 1) + ",";
+  json += "\"SOC\":" + String(bmsData24V.soc, 1)     + ",";
+  // Cellules extrêmes
+  json += "\"V_cell_max\":"   + String(bmsData24V.maxCellVoltage * 0.001, 3) + ",";  // en V
+  json += "\"Cell_max_idx\":" + String(bmsData24V.maxCellNumber)            + ",";
+  json += "\"V_cell_min\":"   + String(bmsData24V.minCellVoltage * 0.001, 3) + ",";
+  json += "\"Cell_min_idx\":" + String(bmsData24V.minCellNumber)            + ",";
+  // Températures
+  json += "\"T_max\":" + String(bmsData24V.maxTemp) + ",";
+  json += "\"T_min\":" + String(bmsData24V.minTemp) + ",";
+  // Status d'erreur
+  json += "\"Errors\":\"0x" + String((uint32_t)(bmsData24V.errorStatus >> 32), HEX)
+                   + String((uint32_t)(bmsData24V.errorStatus       ), HEX) + "\"";
   json += "}\n";
+
+  // Envoi
   UartToSlave.print(json);
   Serial.print("[UART→ESCLAVE] "); Serial.print(json);
 }
+
 
 void sendTemperaturesOverUART() {
     uint16_t* temperatures = multiplexer.getTemperatures();    

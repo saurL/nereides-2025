@@ -18,16 +18,17 @@ struct BmsData24V {
 };
 
 // Structure pour stocker les données de température
+// Structure pour stocker les données de température
 struct TemperatureData {
-    uint8_t thermistorNumber;
+    uint8_t thermistorNumber = 0;
     uint16_t temperatures[16];  // Maximum 16 thermistances (ajustable)
+    bool dataValid = false;
     
     // Constructeur pour initialiser le tableau
-    TemperatureData(uint8_t Tn = 16) {
+    TemperatureData() {
         for (int i = 0; i < 16; i++) {
             temperatures[i] = 0xFFFF;  // Valeur invalide par défaut
         }
-        thermistorNumber = Tn;
     }
 };
 
@@ -40,8 +41,8 @@ TemperatureData temperatureData;
 #define BAUD_RATE 9600  // Même vitesse que votre code d'envoi
 
 // Configuration CAN
-#define CAN_TX_PIN GPIO_NUM_5
-#define CAN_RX_PIN GPIO_NUM_4
+#define CAN_TX 5
+#define CAN_RX 4
 
 // IDs CAN correspondant à vos fonctions de décodage
 #define CAN_ID_BMS_1890       0x762  // 1890 en décimal = 0x762 en hex
@@ -53,54 +54,18 @@ TemperatureData temperatureData;
 HardwareSerial SerialFromMaster(1); // Utilise UART1
 String receivedData = "";
 
-void setup() {
-    Serial.begin(115200);
-    SerialFromMaster.begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
-    
-    Serial.println("=== ESP32 UART vers CAN ===");
-    Serial.println("Réception UART et transmission CAN");
-    
-    // Initialisation du CAN
-    initCAN();
-    
-    Serial.println("En attente de données UART...");
-}
-
-void loop() {
-    // Lecture des données UART
-    readUartData();
-    
-    // Traitement des données complètes
-    if (dataComplete) {
-        Serial.print("JSON reçu: ");
-        Serial.println(receivedData);  // DEBUG: Afficher les données brutes
-        processReceivedJson(receivedData);
-        
-        // Reset pour la prochaine réception
-        receivedData = "";
-        dataComplete = false;
-    }
-    
-    // Envoi périodique sur CAN
-    static unsigned long lastTransmitTime = 0;
-    if (millis() - lastTransmitTime >= 1000) {  // Envoi toutes les secondes
-        sendBmsDataOverCAN();
-        sendTemperatureDataOverCAN();
-        lastTransmitTime = millis();
-    }
-    
-    delay(10);
-}
 
 void initCAN() {
     // Configuration du CAN avec la bibliothèque ESP32-TWAI-CAN
-    ESP32Can.CANInit();
-    
-    if (ESP32Can.begin(ESP32Can.convertSpeed(500))) {  // 500 kbps
-        Serial.println("CAN initialisé avec succès");
-        canInitialized = true;
+    ESP32Can.setPins(CAN_TX, CAN_RX);
+    ESP32Can.setRxQueueSize(10);
+    ESP32Can.setTxQueueSize(10);
+    ESP32Can.setSpeed(ESP32Can.convertSpeed(250));
+
+    if(ESP32Can.begin()) {
+        Serial.println("CAN bus started!");
     } else {
-        Serial.println("Erreur initialisation CAN");
+        Serial.println("CAN bus failed!");
     }
 }
 
@@ -113,7 +78,7 @@ void sendBmsDataOverCAN() {
     #pragma region frame1890
     // Message 1890: Données de base (compatible avec processReceivedData1890)
     CanFrame frame1890;
-    frame1890.identifier = identifier;
+    frame1890.identifier = 0x355;
     frame1890.extd = 1;
     frame1890.data_length_code = 8;
     
@@ -143,7 +108,7 @@ void sendBmsDataOverCAN() {
     frame1890.data[6] = (socValue >> 8) & 0xFF;
     frame1890.data[7] = socValue & 0xFF;
     
-    if (ESP32Can.CANWriteFrame(&frame1890) == 0) {
+    if (ESP32Can.writeFrame(&frame1890) == 0) {
         Serial.println("CAN: Trame 1890 (données de base) envoyée");
     } else {
         Serial.println("CAN: Erreur envoi trame 1890");
@@ -153,7 +118,7 @@ void sendBmsDataOverCAN() {
     #pragma region frame1891
     // Message 1891: Données cellules (compatible avec processReceivedData1891)
     CanFrame frame1891;
-    frame1891.identifier = identifier;
+    frame1891.identifier = 0x356;
     frame1891.extd = 1;
     frame1891.data_length_code = 8;
     
@@ -172,7 +137,7 @@ void sendBmsDataOverCAN() {
     frame1891.data[6] = 0x00;
     frame1891.data[7] = 0x00;
     
-    if (ESP32Can.CANWriteFrame(&frame1891) == 0) {
+    if (ESP32Can.writeFrame(&frame1891) == 0) {
         Serial.println("CAN: Trame 1891 (données cellules) envoyée");
     } else {
         Serial.println("CAN: Erreur envoi trame 1891");
@@ -181,8 +146,8 @@ void sendBmsDataOverCAN() {
 
     #pragma region frame1892
     // Message 1892: Températures (compatible avec processReceivedData1892)
-    CanFrame frame1892
-    frame1892.identifier = identifier;
+    CanFrame frame1892;
+    frame1892.identifier = 0x357;
     frame1892.extd = 1;
     frame1892.data_length_code = 8;
     
@@ -200,7 +165,7 @@ void sendBmsDataOverCAN() {
         frame1892.data[i] = 0x00;
     }
     
-    if (ESP32Can.CANWriteFrame(&frame1892) == 0) {
+    if (ESP32Can.writeFrame(&frame1892) == 0) {
         Serial.println("CAN: Trame 1892 (températures) envoyée");
     } else {
         Serial.println("CAN: Erreur envoi trame 1892");
@@ -210,7 +175,7 @@ void sendBmsDataOverCAN() {
     #pragma region frame1898
     // Message 1898: Erreurs (compatible avec processReceivedData1898)
     CanFrame frame1898;
-    frame1898.identifier = identifier;
+    frame1898.identifier = 0x358;
     frame1898.extd = 1;
     frame1898.data_length_code = 8;
     
@@ -219,7 +184,7 @@ void sendBmsDataOverCAN() {
         frame1898.data[i] = (bmsData24V.errorStatus >> (8 * i)) & 0xFF;
     }
     
-    if (ESP32Can.CANWriteFrame(&frame1898) == 0) {
+    if (ESP32Can.writeFrame(&frame1898) == 0) {
         Serial.println("CAN: Trame 1898 (erreurs) envoyée");
     } else {
         Serial.println("CAN: Erreur envoi trame 1898");
@@ -228,9 +193,6 @@ void sendBmsDataOverCAN() {
 }
 
 void sendTemperatureDataOverCAN() {
-    if (!isTemperatureDataValid()) {
-        return;  // Ne pas envoyer de données invalides
-    }
     
     // Message température: Envoie les données de température
     
@@ -245,7 +207,7 @@ void sendTemperatureDataOverCAN() {
         tempFrame.data[1] = temperatureData.temperatures[i]  & 0xFF;
 
         
-        if !(ESP32Can.writeFrame(tempFrame, 1000)) {
+        if (!ESP32Can.writeFrame(tempFrame, 1000)) {
               Serial.printf("Erreur envoi trame 0x60%d \n", i);
         }
         else {
@@ -267,7 +229,6 @@ void readUartData() {
         else if (inChar == '}') {
             // Fin du message JSON
             receivedData += "}";
-            dataComplete = true;
             break;
         }
         else if (receivedData.length() > 0) {
@@ -388,7 +349,6 @@ void parseTemperatureData(DynamicJsonDocument& doc) {
             }
         }
         
-        temperatureData.dataValid = true;
         Serial.println("--- Données de température mises à jour ---");
     }
 }
@@ -412,10 +372,6 @@ bool isBmsDataValid() {
             bmsData24V.maxTemp > -100);
 }
 
-// Fonction pour vérifier si les données de température sont valides
-bool isTemperatureDataValid() {
-    return temperatureData.dataValid;
-}
 
 // Fonction pour obtenir une température spécifique (en °C)
 float getTemperature(uint8_t thermistorIndex) {
@@ -450,3 +406,41 @@ void resetAllData() {
         temperatureData.temperatures[i] = 0xFFFF;
     }
 }
+
+void setup() {
+    Serial.begin(115200);
+    SerialFromMaster.begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
+    
+    Serial.println("=== ESP32 UART vers CAN ===");
+    Serial.println("Réception UART et transmission CAN");
+    
+    // Initialisation du CAN
+    initCAN();
+    
+    Serial.println("En attente de données UART...");
+}
+
+void loop() {
+    // Lecture des données UART
+    readUartData();
+    
+    // Traitement des données complètes
+    Serial.print("JSON reçu: ");
+    Serial.println(receivedData);  // DEBUG: Afficher les données brutes
+    processReceivedJson(receivedData);
+    
+    // Reset pour la prochaine réception
+    receivedData = "";
+
+    
+    // Envoi périodique sur CAN
+    static unsigned long lastTransmitTime = 0;
+    if (millis() - lastTransmitTime >= 1000) {  // Envoi toutes les secondes
+        sendBmsDataOverCAN();
+        sendTemperatureDataOverCAN();
+        lastTransmitTime = millis();
+    }
+    
+    delay(10);
+}
+

@@ -45,10 +45,18 @@ TemperatureData temperatureData;
 #define CAN_RX 4
 
 // IDs CAN correspondant à vos fonctions de décodage
-#define CAN_ID_BMS_1890       0x762  // 1890 en décimal = 0x762 en hex
-#define CAN_ID_BMS_1891       0x763  // 1891 en décimal = 0x763 en hex  
-#define CAN_ID_BMS_1892       0x764  // 1892 en décimal = 0x764 en hex
-#define CAN_ID_BMS_1898       0x76A  // 1898 en décimal = 0x76A en hex
+//BMS 1 
+#define CAN_ID_BMS1_1890       0x762  // 1890 en décimal = 0x762 en hex
+#define CAN_ID_BMS1_1891       0x763  // 1891 en décimal = 0x763 en hex  
+#define CAN_ID_BMS1_1892       0x764  // 1892 en décimal = 0x764 en hex
+#define CAN_ID_BMS1_1898       0x76A  // 1898 en décimal = 0x76A en hex
+
+//BMS 2 
+#define CAN_ID_BMS2_1890       0x762  // 1890 en décimal = 0x762 en hex
+#define CAN_ID_BMS2_1891       0x763  // 1891 en décimal = 0x763 en hex  
+#define CAN_ID_BMS2_1892       0x764  // 1892 en décimal = 0x764 en hex
+#define CAN_ID_BMS2_1898       0x76A  // 1898 en décimal = 0x76A en hex
+
 #define CAN_ID_TEMP_DATA      0x200  // ID pour les données de température
 
 HardwareSerial SerialFromMaster(1); // Utilise UART1

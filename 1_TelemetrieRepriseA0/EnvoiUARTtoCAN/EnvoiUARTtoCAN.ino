@@ -50,7 +50,7 @@ TemperatureData temperatureData;
 #define BAUD_RATE 9600  // Même vitesse que votre code d'envoi
 
 #define RX_PIN2 16
-#define TX_PIN2 2=17
+#define TX_PIN2 17
 
 // Configuration CAN
 #define CAN_TX 5

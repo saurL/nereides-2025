@@ -4,6 +4,11 @@
 
 // Structure pour stocker les données BMS 24V (identique à votre code d'envoi)
 struct BmsData24V {
+    int can_id_bms_1890;
+    int can_id_bms_1891;
+    int can_id_bms_1892;
+    int can_id_bms_1898;
+    
     float totalVoltage = -1;
     float gatherVoltage = -1;
     float current = -1;
@@ -32,13 +37,20 @@ struct TemperatureData {
     }
 };
 
-BmsData24V bmsData24V;
+BmsData24V bmsData24V1;
+
+BmsData24V bmsData24V2;
+
 TemperatureData temperatureData;
 
+#pragma region defines
 // Configuration UART (correspondant à votre code d'envoi)
-#define RX_PIN 22  // Correspond à UART_RX_PIN de l'émetteur
-#define TX_PIN 21  // Correspond à UART_TX_PIN de l'émetteur
+#define RX_PIN1 22  // Correspond à UART_RX_PIN de l'émetteur
+#define TX_PIN1 21  // Correspond à UART_TX_PIN de l'émetteur
 #define BAUD_RATE 9600  // Même vitesse que votre code d'envoi
+
+#define RX_PIN2 23
+#define TX_PIN2 24
 
 // Configuration CAN
 #define CAN_TX 5
@@ -52,16 +64,21 @@ TemperatureData temperatureData;
 #define CAN_ID_BMS1_1898       0x76A  // 1898 en décimal = 0x76A en hex
 
 //BMS 2 
-#define CAN_ID_BMS2_1890       0x762  // 1890 en décimal = 0x762 en hex
-#define CAN_ID_BMS2_1891       0x763  // 1891 en décimal = 0x763 en hex  
-#define CAN_ID_BMS2_1892       0x764  // 1892 en décimal = 0x764 en hex
-#define CAN_ID_BMS2_1898       0x76A  // 1898 en décimal = 0x76A en hex
+#define CAN_ID_BMS2_1890       0x862  // 1890 en décimal = 0x762 en hex
+#define CAN_ID_BMS2_1891       0x863  // 1891 en décimal = 0x763 en hex  
+#define CAN_ID_BMS2_1892       0x864  // 1892 en décimal = 0x764 en hex
+#define CAN_ID_BMS2_1898       0x86A  // 1898 en décimal = 0x76A en hex
 
-#define CAN_ID_TEMP_DATA      0x200  // ID pour les données de température
+#define CAN_ID_TEMP_DATA_1      0x200  // ID pour les données de température
+#define CAN_ID_TEMP_DATA_2      0x300
 
-HardwareSerial SerialFromMaster(1); // Utilise UART1
-String receivedData = "";
 
+#pragma endregion
+
+HardwareSerial SerialBMS1(1); // Utilise UART1
+HardwareSerial SerialBMS2(2); // Utilise UART2
+String receivedData1 = "";
+String receivedData2 = "";
 
 void initCAN() {
     // Configuration du CAN avec la bibliothèque ESP32-TWAI-CAN
@@ -78,40 +95,40 @@ void initCAN() {
 }
 
 
-void sendBmsDataOverCAN() {
-    if (!isBmsDataValid()) {
+void sendBmsDataOverCAN(BmsData24V& bms) {
+    if (!isBmsDataValid(bms)) {
         return;  // Ne pas envoyer de données invalides
     }
     
     #pragma region frame1890
     // Message 1890: Données de base (compatible avec processReceivedData1890)
     CanFrame frame1890;
-    frame1890.identifier = 0x355;
+    frame1890.identifier = bms.can_id_bms_1890;
     frame1890.extd = 1;
     frame1890.data_length_code = 8;
     
     // Formatage selon processReceivedData1890:
     // totalVoltage * 10 sur 2 bytes (big endian)
-    uint16_t totalVolt = (uint16_t)(bmsData24V.totalVoltage * 10);
+    uint16_t totalVolt = (uint16_t)(bms.totalVoltage * 10);
     frame1890.data[0] = (totalVolt >> 8) & 0xFF;
     frame1890.data[1] = totalVolt & 0xFF;
     
     // gatherVoltage * 10 sur 2 bytes (big endian)
-    uint16_t gatherVolt = (uint16_t)(bmsData24V.gatherVoltage * 10);
+    uint16_t gatherVolt = (uint16_t)(bms.gatherVoltage * 10);
     frame1890.data[2] = (gatherVolt >> 8) & 0xFF;
     frame1890.data[3] = gatherVolt & 0xFF;
     
     // current * 10 + 30000 sur 2 bytes (big endian)
-    uint16_t current = (uint16_t)((bmsData24V.current * 10) + 30000);
+    uint16_t current = (uint16_t)((bms.current * 10) + 30000);
     frame1890.data[4] = (current >> 8) & 0xFF;
     frame1890.data[5] = current & 0xFF;
     
     // SOC * 10 sur 2 bytes (big endian), 0xFFFF si invalide
     uint16_t socValue;
-    if (bmsData24V.soc < 0) {
+    if (bms.soc < 0) {
         socValue = 0xFFFF;
     } else {
-        socValue = (uint16_t)(bmsData24V.soc * 10);
+        socValue = (uint16_t)(bms.soc * 10);
     }
     frame1890.data[6] = (socValue >> 8) & 0xFF;
     frame1890.data[7] = socValue & 0xFF;
@@ -126,20 +143,20 @@ void sendBmsDataOverCAN() {
     #pragma region frame1891
     // Message 1891: Données cellules (compatible avec processReceivedData1891)
     CanFrame frame1891;
-    frame1891.identifier = 0x356;
+    frame1891.identifier = bms.can_id_bms_1891;
     frame1891.extd = 1;
     frame1891.data_length_code = 8;
     
     // maxCellVoltage sur 2 bytes (big endian)
-    frame1891.data[0] = (bmsData24V.maxCellVoltage >> 8) & 0xFF;
-    frame1891.data[1] = bmsData24V.maxCellVoltage & 0xFF;
+    frame1891.data[0] = (bms.maxCellVoltage >> 8) & 0xFF;
+    frame1891.data[1] = bms.maxCellVoltage & 0xFF;
     // maxCellNumber sur 1 byte
-    frame1891.data[2] = bmsData24V.maxCellNumber;
+    frame1891.data[2] = bms.maxCellNumber;
     // minCellVoltage sur 2 bytes (big endian)
-    frame1891.data[3] = (bmsData24V.minCellVoltage >> 8) & 0xFF;
-    frame1891.data[4] = bmsData24V.minCellVoltage & 0xFF;
+    frame1891.data[3] = (bms.minCellVoltage >> 8) & 0xFF;
+    frame1891.data[4] = bms.minCellVoltage & 0xFF;
     // minCellNumber sur 1 byte
-    frame1891.data[5] = bmsData24V.minCellNumber;
+    frame1891.data[5] = bms.minCellNumber;
     
     // Bytes 6-7 réservés
     frame1891.data[6] = 0x00;
@@ -155,18 +172,18 @@ void sendBmsDataOverCAN() {
     #pragma region frame1892
     // Message 1892: Températures (compatible avec processReceivedData1892)
     CanFrame frame1892;
-    frame1892.identifier = 0x357;
+    frame1892.identifier = bms.can_id_bms_1892;
     frame1892.extd = 1;
     frame1892.data_length_code = 8;
     
     // maxTemp + 40 sur byte 0
-    frame1892.data[0] = (uint8_t)(bmsData24V.maxTemp + 40);
+    frame1892.data[0] = (uint8_t)(bms.maxTemp + 40);
     
     // Byte 1 réservé
     frame1892.data[1] = 0x00;
     
     // minTemp + 40 sur byte 2
-    frame1892.data[2] = (uint8_t)(bmsData24V.minTemp + 40);
+    frame1892.data[2] = (uint8_t)(bms.minTemp + 40);
     
     // Bytes 3-7 réservés
     for (int i = 3; i < 8; i++) {
@@ -183,13 +200,13 @@ void sendBmsDataOverCAN() {
     #pragma region frame1898
     // Message 1898: Erreurs (compatible avec processReceivedData1898)
     CanFrame frame1898;
-    frame1898.identifier = 0x358;
+    frame1898.identifier = bms.can_id_bms_1898;
     frame1898.extd = 1;
     frame1898.data_length_code = 8;
     
     // errorStatus sur 8 bytes (little endian)
     for (int i = 0; i < 8; i++) {
-        frame1898.data[i] = (bmsData24V.errorStatus >> (8 * i)) & 0xFF;
+        frame1898.data[i] = (bms.errorStatus >> (8 * i)) & 0xFF;
     }
     
     if (ESP32Can.writeFrame(&frame1898) == 0) {
@@ -226,29 +243,29 @@ void sendTemperatureDataOverCAN() {
     }
 }
 
-void readUartData() {
-    while (SerialFromMaster.available()) {
-        char inChar = (char)SerialFromMaster.read();
+void readUartData(HardwareSerial& serial, String& received) {
+    while (serial.available()) {
+        char inChar = (char)serial.read();
         
         if (inChar == '{') {
             // Début d'un nouveau message JSON
-            receivedData = "{";
+            received = "{";
         }
         else if (inChar == '}') {
             // Fin du message JSON
-            receivedData += "}";
+            received += "}";
             break;
         }
-        else if (receivedData.length() > 0) {
+        else if (received.length() > 0) {
             // Accumulation des caractères (ignore \n)
             if (inChar != '\n') {
-                receivedData += inChar;
+                received += inChar;
             }
         }
     }
 }
 
-void processReceivedJson(String jsonString) {
+void processReceivedJson(String jsonString, BmsData24V& bms) {
     // Création du document JSON
     DynamicJsonDocument doc(1024);
     
@@ -272,7 +289,7 @@ void processReceivedJson(String jsonString) {
     String dataType = doc["Data"].as<String>();
     
     if (dataType == "BMS") {
-        parseBmsData(doc);
+        parseBmsData(doc, bms);
     }
     else if (dataType == "Temperatures") {
         parseTemperatureData(doc);
@@ -282,64 +299,64 @@ void processReceivedJson(String jsonString) {
     }
 }
 
-void parseBmsData(DynamicJsonDocument& doc) {
+void parseBmsData(DynamicJsonDocument& doc, BmsData24V& bms) {
     Serial.println("Parsing des données BMS…");
 
     // Tensions
     if (doc.containsKey("V_total")) {
-        bmsData24V.totalVoltage = doc["V_total"].as<float>();
-        Serial.print("Tension totale: "); Serial.println(bmsData24V.totalVoltage);
+        bms.totalVoltage = doc["V_total"].as<float>();
+        Serial.print("Tension totale: "); Serial.println(bms.totalVoltage);
     }
     if (doc.containsKey("V_gather")) {
-        bmsData24V.gatherVoltage = doc["V_gather"].as<float>();
-        Serial.print("Tension gather: "); Serial.println(bmsData24V.gatherVoltage);
+        bms.gatherVoltage = doc["V_gather"].as<float>();
+        Serial.print("Tension gather: "); Serial.println(bms.gatherVoltage);
     }
 
     // Courant & SOC
     if (doc.containsKey("I")) {
-        bmsData24V.current = doc["I"].as<float>();
-        Serial.print("Courant: "); Serial.println(bmsData24V.current);
+        bms.current = doc["I"].as<float>();
+        Serial.print("Courant: "); Serial.println(bms.current);
     }
     if (doc.containsKey("SOC")) {
-        bmsData24V.soc = doc["SOC"].as<float>();
-        Serial.print("SOC: "); Serial.println(bmsData24V.soc);
+        bms.soc = doc["SOC"].as<float>();
+        Serial.print("SOC: "); Serial.println(bms.soc);
     }
 
     // Cellules extrêmes
     if (doc.containsKey("V_cell_max")) {
         // tu envoies cette valeur en V (3 décimales)
-        bmsData24V.maxCellVoltage = uint16_t(doc["V_cell_max"].as<float>() * 1000);
-        Serial.print("V_cell_max (mV): "); Serial.println(bmsData24V.maxCellVoltage);
+        bms.maxCellVoltage = uint16_t(doc["V_cell_max"].as<float>() * 1000);
+        Serial.print("V_cell_max (mV): "); Serial.println(bms.maxCellVoltage);
     }
     if (doc.containsKey("Cell_max_idx")) {
-        bmsData24V.maxCellNumber = doc["Cell_max_idx"].as<uint8_t>();
-        Serial.print("Cell_max_idx: "); Serial.println(bmsData24V.maxCellNumber);
+        bms.maxCellNumber = doc["Cell_max_idx"].as<uint8_t>();
+        Serial.print("Cell_max_idx: "); Serial.println(bms.maxCellNumber);
     }
     if (doc.containsKey("V_cell_min")) {
-        bmsData24V.minCellVoltage = uint16_t(doc["V_cell_min"].as<float>() * 1000);
-        Serial.print("V_cell_min (mV): "); Serial.println(bmsData24V.minCellVoltage);
+        bms.minCellVoltage = uint16_t(doc["V_cell_min"].as<float>() * 1000);
+        Serial.print("V_cell_min (mV): "); Serial.println(bms.minCellVoltage);
     }
     if (doc.containsKey("Cell_min_idx")) {
-        bmsData24V.minCellNumber = doc["Cell_min_idx"].as<uint8_t>();
-        Serial.print("Cell_min_idx: "); Serial.println(bmsData24V.minCellNumber);
+        bms.minCellNumber = doc["Cell_min_idx"].as<uint8_t>();
+        Serial.print("Cell_min_idx: "); Serial.println(bms.minCellNumber);
     }
 
     // Températures
     if (doc.containsKey("T_max")) {
-        bmsData24V.maxTemp = doc["T_max"].as<int8_t>();
-        Serial.print("T_max: "); Serial.println(bmsData24V.maxTemp);
+        bms.maxTemp = doc["T_max"].as<int8_t>();
+        Serial.print("T_max: "); Serial.println(bms.maxTemp);
     }
     if (doc.containsKey("T_min")) {
-        bmsData24V.minTemp = doc["T_min"].as<int8_t>();
-        Serial.print("T_min: "); Serial.println(bmsData24V.minTemp);
+        bms.minTemp = doc["T_min"].as<int8_t>();
+        Serial.print("T_min: "); Serial.println(bms.minTemp);
     }
 
     // Status d'erreur en hex string "0xAABBCCDDEEFF…"
     if (doc.containsKey("Errors")) {
         const char* errStr = doc["Errors"];
         // skip "0x" si présent, base 16
-        bmsData24V.errorStatus = strtoull(errStr + (errStr[1]=='x'?2:0), NULL, 16);
-        Serial.print("Errors: 0x"); Serial.println((unsigned long long) bmsData24V.errorStatus, HEX);
+        bms.errorStatus = strtoull(errStr + (errStr[1]=='x'?2:0), NULL, 16);
+        Serial.print("Errors: 0x"); Serial.println((unsigned long long) bms.errorStatus, HEX);
     }
 
     Serial.println("--- Données BMS mises à jour ---");
@@ -364,9 +381,9 @@ void parseTemperatureData(DynamicJsonDocument& doc) {
 // === FONCTIONS UTILITAIRES ===
 
 // Fonction pour obtenir les données BMS
-BmsData24V getBmsData() {
+/*BmsData24V getBmsData() {
     return bmsData24V;
-}
+}*/
 
 // Fonction pour obtenir les données de température
 TemperatureData getTemperatureData() {
@@ -374,10 +391,10 @@ TemperatureData getTemperatureData() {
 }
 
 // Fonction pour vérifier si les données BMS sont valides
-bool isBmsDataValid() {
-    return (bmsData24V.totalVoltage > 0 && 
-            bmsData24V.soc >= 0 && 
-            bmsData24V.maxTemp > -100);
+bool isBmsDataValid(BmsData24V& bms) {
+    return (bms.totalVoltage > 0 && 
+            bms.soc >= 0 && 
+            bms.maxTemp > -100);
 }
 
 
@@ -393,19 +410,19 @@ float getTemperature(uint8_t thermistorIndex) {
 }
 
 // Fonction pour réinitialiser toutes les données
-void resetAllData() {
+void resetAllData(BmsData24V& bms) {
     // Reset BMS
-    bmsData24V.totalVoltage = -1;
-    bmsData24V.gatherVoltage = -1;
-    bmsData24V.current = -1;
-    bmsData24V.soc = -1;
-    bmsData24V.maxCellVoltage = 0;
-    bmsData24V.maxCellNumber = 0;
-    bmsData24V.minCellVoltage = 0;
-    bmsData24V.minCellNumber = 0;
-    bmsData24V.maxTemp = -100;
-    bmsData24V.minTemp = -100;
-    bmsData24V.errorStatus = 0;
+    bms.totalVoltage = -1;
+    bms.gatherVoltage = -1;
+    bms.current = -1;
+    bms.soc = -1;
+    bms.maxCellVoltage = 0;
+    bms.maxCellNumber = 0;
+    bms.minCellVoltage = 0;
+    bms.minCellNumber = 0;
+    bms.maxTemp = -100;
+    bms.minTemp = -100;
+    bms.errorStatus = 0;
     
     // Reset températures
     temperatureData.thermistorNumber = 0;
@@ -417,7 +434,9 @@ void resetAllData() {
 
 void setup() {
     Serial.begin(115200);
-    SerialFromMaster.begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
+    SerialBMS1.begin(BAUD_RATE, SERIAL_8N1, RX_PIN1, TX_PIN1);
+    
+    SerialBMS2.begin(BAUD_RATE, SERIAL_8N1, RX_PIN2, TX_PIN2);
     
     Serial.println("=== ESP32 UART vers CAN ===");
     Serial.println("Réception UART et transmission CAN");
@@ -426,25 +445,45 @@ void setup() {
     initCAN();
     
     Serial.println("En attente de données UART...");
+
+        
+    bmsData24V1.can_id_bms_1890 = CAN_ID_BMS1_1890;
+    bmsData24V1.can_id_bms_1891 = CAN_ID_BMS1_1891;
+    bmsData24V1.can_id_bms_1892 = CAN_ID_BMS1_1892;
+    bmsData24V1.can_id_bms_1898 = CAN_ID_BMS1_1898;
+
+
+    bmsData24V2.can_id_bms_1890 = CAN_ID_BMS2_1890;
+    bmsData24V2.can_id_bms_1891 = CAN_ID_BMS2_1891;
+    bmsData24V2.can_id_bms_1892 = CAN_ID_BMS2_1892;
+    bmsData24V2.can_id_bms_1898 = CAN_ID_BMS2_1898;
 }
 
 void loop() {
     // Lecture des données UART
-    readUartData();
-    
+    readUartData(SerialBMS1, receivedData1);
+    readUartData(SerialBMS2, receivedData2);
+
     // Traitement des données complètes
-    Serial.print("JSON reçu: ");
-    Serial.println(receivedData);  // DEBUG: Afficher les données brutes
-    processReceivedJson(receivedData);
+    Serial.print("JSON 2 reçu: ");
+    Serial.println(receivedData1);  // DEBUG: Afficher les données brutes
+    
+    Serial.print("JSON 1 reçu: ");
+    Serial.println(receivedData2);  // DEBUG: Afficher les données brutes
+    
+    processReceivedJson(receivedData1, bmsData24V1);
+    processReceivedJson(receivedData2, bmsData24V2);
     
     // Reset pour la prochaine réception
-    receivedData = "";
+    receivedData1 = "";
+    receivedData2 = "";
 
     
     // Envoi périodique sur CAN
     static unsigned long lastTransmitTime = 0;
     if (millis() - lastTransmitTime >= 1000) {  // Envoi toutes les secondes
-        sendBmsDataOverCAN();
+        sendBmsDataOverCAN(bmsData24V1);
+        sendBmsDataOverCAN(bmsData24V2);
         sendTemperatureDataOverCAN();
         lastTransmitTime = millis();
     }

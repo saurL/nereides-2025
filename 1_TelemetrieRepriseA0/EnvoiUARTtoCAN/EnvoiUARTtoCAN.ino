@@ -49,8 +49,8 @@ TemperatureData temperatureData;
 #define TX_PIN1 21  // Correspond à UART_TX_PIN de l'émetteur
 #define BAUD_RATE 9600  // Même vitesse que votre code d'envoi
 
-#define RX_PIN2 23
-#define TX_PIN2 24
+#define RX_PIN2 16
+#define TX_PIN2 2=17
 
 // Configuration CAN
 #define CAN_TX 5

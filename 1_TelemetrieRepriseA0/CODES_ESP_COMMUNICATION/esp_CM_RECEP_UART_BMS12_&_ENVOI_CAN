@@ -1,0 +1,884 @@
+//fusion : 
+/////////////////ESP CM UNIFIÉ - BMS 24V + BMS 48V + CONTRÔLEUR MOTEUR
+#include <Wire.h>
+#include <ESP32-TWAI-CAN.hpp>
+#include <ArduinoJson.h>
+#include <HardwareSerial.h>
+
+// Configuration CAN
+#define CAN_TX 4 // PAR PITIE MODIFIEZ PLUS CA A LAIDE ON A PASSE 15 MIN A CHERCHER CE QUI DECONNAIS
+#define CAN_RX 5 // NE PAS LES CONFONDRES TX = 4 RX = D5 VRAIMENT
+
+// Configuration UART pour BMS 48V
+#define RX_PIN_1 21  // BMS 48V #1
+#define TX_PIN_1 22
+#define RX_PIN_2 16  // BMS 48V #2
+#define TX_PIN_2 17
+#define BAUD_RATE 9600
+
+// Configuration du multiplexeur pour thermistances 24V
+class Multiplexer {
+    public:        
+        int muxS0;
+        int muxS1;
+        int muxS2;
+        int muxS3;
+        int muxSIG;
+        int numThermistors;
+        
+        Multiplexer(int S0, int S1, int S2, int S3, int SIG, int num) {
+            this->muxS0 = S0;
+            this->muxS1 = S1;
+            this->muxS2 = S2;
+            this->muxS3 = S3;
+            this->muxSIG = SIG;
+            this->numThermistors = num;            
+
+            pinMode(this->muxS0, OUTPUT);
+            pinMode(this->muxS1, OUTPUT);
+            pinMode(this->muxS2, OUTPUT);
+            pinMode(this->muxS3, OUTPUT);
+        }
+
+        uint16_t* getTemperatures() {
+            uint16_t* temperatures = new uint16_t[this->numThermistors];
+            for (int i = 0; i < this->numThermistors; i++) {
+                uint16_t temp = this->getTemperature(i);
+                temperatures[i] = temp;
+                Serial.printf("Thermistance 24V numero %u, temperature de %u \n", i, temp);
+            }
+            return temperatures;
+        }
+
+    private:
+        uint16_t convertAnalogToTemp(float adcValue) {
+            const float seriesResistor = 10000.0;
+            const float nominalResistance = 10000.0;
+            const float nominalTemperature = 25.0;
+            const float bCoefficient = 3950;
+            const int adcMax = 4095;
+            
+            float voltage = adcValue * 3.3 / adcMax;
+            
+            if (voltage < 0.01) {
+                Serial.println("Tension trop basse : vérifie le câblage !");
+                return (uint16_t)(0xFFFF);
+            }           
+            
+            float resistance = seriesResistor * (voltage / (3.3 - voltage));
+
+            float steinhart;
+            steinhart = resistance / nominalResistance;
+            steinhart = log(steinhart);
+            steinhart /= bCoefficient;
+            steinhart += 1.0 / (nominalTemperature + 273.15);
+            steinhart = 1.0 / steinhart;
+            steinhart -= 273.15;
+            
+            return (uint16_t)(steinhart * 100);
+        }
+
+        void selectMuxChannel(int channel) {
+            digitalWrite(this->muxS0, bitRead(channel, 0));
+            digitalWrite(this->muxS1, bitRead(channel, 1));
+            digitalWrite(this->muxS2, bitRead(channel, 2));
+            digitalWrite(this->muxS3, bitRead(channel, 3));
+        }
+
+        uint16_t getTemperature(int channel) {
+            selectMuxChannel(channel);
+            delay(5);
+            int adcValue = analogRead(muxSIG);
+            float steinhart = convertAnalogToTemp(adcValue);
+            return steinhart;
+        }
+};
+
+// Structure pour BMS 24V (requêtes CAN)
+struct BmsData24V {
+    float totalVoltage = -1;
+    float gatherVoltage = -1;
+    float current = -1;
+    float soc = -1;
+    uint16_t maxCellVoltage = 0;
+    uint8_t maxCellNumber = 0;
+    uint16_t minCellVoltage = 0;
+    uint8_t minCellNumber = 0;
+    int8_t maxTemp = -100;
+    int8_t minTemp = -100;
+    uint64_t errorStatus = 0;
+};
+
+// Structure pour BMS 48V (UART)
+struct BmsData48V {
+    float totalVoltage = -1;
+    float gatherVoltage = -1;
+    float current = -1;
+    float soc = -1;
+    uint16_t maxCellVoltage = 0;
+    uint8_t maxCellNumber = 0;
+    uint16_t minCellVoltage = 0;
+    uint8_t minCellNumber = 0;
+    int8_t maxTemp = -100;
+    int8_t minTemp = -100;
+    uint64_t errorStatus = 0;
+};
+
+// Structure pour températures des thermistances 48V
+struct TemperatureData48V {
+    uint8_t thermistorNumber = 0;
+    uint16_t temperatures[16];
+    bool dataValid = false;
+    uint16_t overallMinTemp = 9999;
+    uint16_t overallMaxTemp = 0;
+    
+    TemperatureData48V() {
+        for (int i = 0; i < 16; i++) {
+            temperatures[i] = 0xFFFF;
+        }
+    }
+};
+
+// Structure pour les données de températures 24V
+struct TemperatureData24V {
+    uint16_t temperatures[10];  // 10 thermistances selon votre multiplexeur
+    uint16_t overallMinTemp = 9999;
+    uint16_t overallMaxTemp = 0;
+    bool dataValid = false;
+    
+    TemperatureData24V() {
+        for (int i = 0; i < 10; i++) {
+            temperatures[i] = 0xFFFF;
+        }
+    }
+};
+
+// Instance globale pour les températures 24V
+TemperatureData24V temperatureData24V;
+
+// Structure pour contrôleur moteur
+struct MotorControllerData {
+    uint16_t speed_rpm;
+    float motor_current;
+    float battery_voltage;
+    uint16_t error_code;
+    uint8_t throttle_raw;
+    float throttle_voltage;
+    int8_t controller_temp;
+    int8_t motor_temp;
+    const char* command;
+    const char* feedback;
+    bool switch_boost;
+    bool switch_foot;
+    bool switch_fwd;
+    bool switch_bwd;
+    bool switch_brake;
+    bool hall_a;
+    bool hall_b;
+    bool hall_c;
+};
+
+// Instances globales
+Multiplexer multiplexeur1(12, 14, 27, 26, 32, 10);
+BmsData24V bmsData24V;
+BmsData48V bmsData48V_1, bmsData48V_2;
+TemperatureData48V temperatureData48V_1, temperatureData48V_2;
+MotorControllerData controllerData;
+
+// UART pour BMS 48V
+HardwareSerial SerialFromBMS1(1);
+HardwareSerial SerialFromBMS2(2);
+
+// Variables de réception UART
+String receivedData_1 = "";
+String receivedData_2 = "";
+bool dataComplete_1 = false;
+bool dataComplete_2 = false;
+
+// Variables CAN
+CanFrame rxFrame, txFrame;
+
+// Identifiants CAN
+#define CAN_ID_BMS48V_1_BASE 0x001
+#define CAN_ID_BMS48V_2_BASE 0x005
+#define CAN_ID_TEMP48V_1_MINMAX 0x009
+#define CAN_ID_TEMP48V_2_MINMAX 0x010
+
+// Timing
+unsigned long lastBms24VRequestTime = 0;
+unsigned long lastThermistanceTime = 0;
+unsigned long lastDebugTime = 0;
+
+#define DEBUG_CAN_SEND true
+#define CAN_ID_TEMP24V_MINMAX 0x011
+
+// ========================= FONCTIONS TEMPÉRATURES BMS 24V =========================
+
+void updateTemperatures24V() {
+    uint16_t* temperatures = multiplexeur1.getTemperatures();
+    
+    // Copie des températures dans la structure
+    for (int i = 0; i < multiplexeur1.numThermistors && i < 10; i++) {
+        temperatureData24V.temperatures[i] = temperatures[i];
+    }
+    
+    temperatureData24V.dataValid = true;
+    
+    // Calcul des min/max
+    calculateMinMaxTemperatures24V();
+    
+    delete[] temperatures; // Libération mémoire
+}
+
+void calculateMinMaxTemperatures24V() {
+    if (!temperatureData24V.dataValid) {
+        temperatureData24V.overallMinTemp = 9999;
+        temperatureData24V.overallMaxTemp = 0;
+        return;
+    }
+    
+    uint16_t currentMin, currentMax;
+    bool firstValidFound = false;
+    
+    for (int i = 0; i < multiplexeur1.numThermistors && i < 10; i++) {
+        if (temperatureData24V.temperatures[i] != 0xFFFF) {
+            uint16_t tempCenti = temperatureData24V.temperatures[i];
+            
+            if (!firstValidFound) {
+                currentMin = tempCenti;
+                currentMax = tempCenti;
+                firstValidFound = true;
+            } else {
+                if (tempCenti < currentMin) {
+                    currentMin = tempCenti;
+                }
+                if (tempCenti > currentMax) {
+                    currentMax = tempCenti;
+                }
+            }
+        }
+    }
+    
+    if (firstValidFound) {
+        temperatureData24V.overallMinTemp = currentMin;
+        temperatureData24V.overallMaxTemp = currentMax;
+        
+        if (DEBUG_CAN_SEND) {
+            Serial.printf("Températures 24V - Min: %.2f°C, Max: %.2f°C\n", 
+                         currentMin / 100.0, currentMax / 100.0);
+        }
+    } else {
+        temperatureData24V.overallMinTemp = 9999;
+        temperatureData24V.overallMaxTemp = 0;
+        Serial.println("Aucune température 24V valide trouvée");
+    }
+}
+
+void sendMinMaxTemperature24VToCAN() {
+    if (!temperatureData24V.dataValid || 
+        temperatureData24V.overallMinTemp == 9999 || 
+        temperatureData24V.overallMaxTemp == 0) {
+        if (DEBUG_CAN_SEND) {
+            Serial.println("Données températures 24V invalides, pas d'envoi CAN");
+        }
+        return;
+    }
+
+    txFrame.identifier = CAN_ID_TEMP24V_MINMAX;
+    txFrame.extd = false;
+    txFrame.data_length_code = 8;
+
+    // Températures min et max (en centièmes de degrés)
+    txFrame.data[0] = (temperatureData24V.overallMinTemp >> 8) & 0xFF;
+    txFrame.data[1] = temperatureData24V.overallMinTemp & 0xFF;
+    txFrame.data[2] = (temperatureData24V.overallMaxTemp >> 8) & 0xFF;
+    txFrame.data[3] = temperatureData24V.overallMaxTemp & 0xFF;
+    
+    // Nombre de thermistances actives
+    txFrame.data[4] = multiplexeur1.numThermistors;
+    
+    // Bytes de réserve
+    txFrame.data[5] = 0x00;
+    txFrame.data[6] = 0x00;
+    txFrame.data[7] = 0x00;
+
+    if (ESP32Can.writeFrame(txFrame)) {
+        if (DEBUG_CAN_SEND) {
+            Serial.printf("CAN 0x%03X envoyé: Min Temp 24V=%.2f°C, Max Temp 24V=%.2f°C\n",
+                          CAN_ID_TEMP24V_MINMAX, 
+                          temperatureData24V.overallMinTemp / 100.0, 
+                          temperatureData24V.overallMaxTemp / 100.0);
+        }
+    } else {
+        if (DEBUG_CAN_SEND) {
+            Serial.println("Échec envoi CAN températures 24V");
+        }
+    }
+    delay(5);
+}
+
+bool isTemperature24VDataValid() {
+    return temperatureData24V.dataValid && 
+           temperatureData24V.overallMinTemp != 9999 && 
+           temperatureData24V.overallMaxTemp != 0;
+}
+// ========================= FONCTIONS BMS 24V (CAN) =========================
+
+void sendBms24VRequest(uint32_t identifier) {
+    CanFrame frame;
+    frame.identifier = identifier;
+    frame.extd = 1;
+    frame.data_length_code = 8;
+    memset(frame.data, 0, 8);
+
+    if (ESP32Can.writeFrame(frame, 1000)) {
+        Serial.print("Requête BMS 24V envoyée : ID = 0x");
+        Serial.println(identifier, HEX);
+    } else {
+        Serial.println("Échec envoi requête BMS 24V");
+    }
+}
+
+void processReceivedData1890(uint8_t* data, uint32_t identifier) {
+    bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
+    bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
+    bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
+    bmsData24V.soc = (data[6] == 0xFF && data[7] == 0xFF) ? -1 : ((data[6] << 8) | data[7]) * 0.1;
+    Serial.println("BMS 24V - SOC: " + String(bmsData24V.soc));
+}
+
+void processReceivedData1891(uint8_t* data, uint32_t identifier) {
+    bmsData24V.maxCellVoltage = (data[0] << 8) | data[1];
+    bmsData24V.maxCellNumber = data[2];
+    bmsData24V.minCellVoltage = (data[3] << 8) | data[4];
+    bmsData24V.minCellNumber = data[5];
+    Serial.println("BMS 24V - CellVolt Max: " + String(bmsData24V.maxCellVoltage));
+}
+
+void processReceivedData1892(uint8_t* data, uint32_t identifier) {
+    bmsData24V.maxTemp = data[0] - 40;
+    bmsData24V.minTemp = data[2] - 40;
+    Serial.println("BMS 24V - Temp max: " + String(bmsData24V.maxTemp) + "°C, min: " + String(bmsData24V.minTemp) + "°C");
+}
+
+void processReceivedData1898(uint8_t* data, uint32_t identifier) {
+    bmsData24V.errorStatus = 0;
+    for (int i = 0; i < 8; i++) {
+        bmsData24V.errorStatus |= ((uint64_t)data[i] << (8 * i));
+    }
+}
+
+// ========================= FONCTIONS CONTRÔLEUR MOTEUR =========================
+
+void decodeMessage1(const CanFrame &frame) {
+    controllerData.speed_rpm = (frame.data[1] << 8) | frame.data[0];
+    controllerData.motor_current = ((frame.data[3] << 8) | frame.data[2]) / 10.0 - 2000;
+    controllerData.battery_voltage = ((frame.data[5] << 8) | frame.data[4]) / 10.0;
+    controllerData.error_code = (frame.data[7] << 8) | frame.data[6];
+
+    Serial.print("--- Contrôleur Message 1 ---");
+    for (int i = 0; i < 16; i++) {
+        if (controllerData.error_code & (1 << i)) {
+            Serial.printf("ERR%d: Active\n", i);
+        }
+    }
+}
+
+void decodeMessage2(const CanFrame &frame) {
+    controllerData.throttle_raw = frame.data[0];
+    controllerData.throttle_voltage = controllerData.throttle_raw * 5.0 / 255.0;
+    controllerData.controller_temp = frame.data[1] - 40;
+    controllerData.motor_temp = frame.data[2] - 30;
+
+    uint8_t controller_status = frame.data[4];
+    uint8_t switch_signals = frame.data[5];
+
+    const char* commands[] = {"Neutral", "Forward", "Backward", "Reserved"};
+    const char* feedbacks[] = {"Stationary", "Forward", "Backward", "Reserved"};
+
+    controllerData.command = commands[controller_status & 0x03];
+    controllerData.feedback = feedbacks[(controller_status >> 2) & 0x03];
+
+    controllerData.switch_boost = (switch_signals >> 7) & 0x01;
+    controllerData.switch_foot = (switch_signals >> 6) & 0x01;
+    controllerData.switch_fwd = (switch_signals >> 5) & 0x01;
+    controllerData.switch_bwd = (switch_signals >> 4) & 0x01;
+    controllerData.switch_brake = (switch_signals >> 3) & 0x01;
+
+    controllerData.hall_a = (switch_signals >> 0) & 0x01;
+    controllerData.hall_b = (switch_signals >> 1) & 0x01;
+    controllerData.hall_c = (switch_signals >> 2) & 0x01;
+    
+    Serial.print("--- Contrôleur Message 2 ---");
+}
+
+// ========================= FONCTIONS BMS 48V (UART) =========================
+
+void readUartData(HardwareSerial& serial, String& receivedData, bool& dataComplete, int bmsNumber) {
+    while (serial.available()) {
+        char inChar = (char)serial.read();
+        
+        if (inChar == '{') {
+            receivedData = "{";
+        }
+        else if (inChar == '}') {
+            receivedData += "}";
+            dataComplete = true;
+            break;
+        }
+        else if (receivedData.length() > 0) {
+            if (inChar != '\n') {
+                receivedData += inChar;
+            }
+        }
+    }
+}
+
+void processReceivedJson(String jsonString, int bmsNumber) {
+    DynamicJsonDocument doc(1024);
+    
+    DeserializationError error = deserializeJson(doc, jsonString);    
+    if (error) {
+        Serial.print("BMS 48V ");
+        Serial.print(bmsNumber);
+        Serial.print(" - Erreur parsing JSON: ");
+        Serial.println(error.c_str());
+        return;
+    }
+    
+    if (!doc.containsKey("Data")) {
+        Serial.print("BMS 48V ");
+        Serial.print(bmsNumber);
+        Serial.println(" - Champ 'Data' manquant");
+        return;
+    }
+    
+    String dataType = doc["Data"].as<String>();
+    
+    if (dataType == "BMS") {
+        parseBms48VData(doc, bmsNumber);
+    }
+    else if (dataType == "Temperatures") {
+        parseTemperature48VData(doc, bmsNumber);
+        calculateMinMaxTemperatures48V(bmsNumber);
+    }
+}
+
+void parseBms48VData(DynamicJsonDocument& doc, int bmsNumber) {
+    BmsData48V* bmsData = (bmsNumber == 1) ? &bmsData48V_1 : &bmsData48V_2;
+
+    if (doc.containsKey("V_total")) {
+        bmsData->totalVoltage = doc["V_total"].as<float>();
+    }
+    if (doc.containsKey("V_gather")) {
+        bmsData->gatherVoltage = doc["V_gather"].as<float>();
+    }
+    if (doc.containsKey("I")) {
+        bmsData->current = doc["I"].as<float>();
+    }
+    if (doc.containsKey("SOC")) {
+        bmsData->soc = doc["SOC"].as<float>();
+    }
+    if (doc.containsKey("V_cell_max")) {
+        bmsData->maxCellVoltage = uint16_t(doc["V_cell_max"].as<float>() * 1000);
+    }
+    if (doc.containsKey("Cell_max_idx")) {
+        bmsData->maxCellNumber = doc["Cell_max_idx"].as<uint8_t>();
+    }
+    if (doc.containsKey("V_cell_min")) {
+        bmsData->minCellVoltage = uint16_t(doc["V_cell_min"].as<float>() * 1000);
+    }
+    if (doc.containsKey("Cell_min_idx")) {
+        bmsData->minCellNumber = doc["Cell_min_idx"].as<uint8_t>();
+    }
+    if (doc.containsKey("T_max")) {
+        bmsData->maxTemp = doc["T_max"].as<int8_t>();
+    }
+    if (doc.containsKey("T_min")) {
+        bmsData->minTemp = doc["T_min"].as<int8_t>();
+    }
+    if (doc.containsKey("Errors")) {
+        const char* errStr = doc["Errors"];
+        bmsData->errorStatus = strtoull(errStr + (errStr[1]=='x'?2:0), NULL, 16);
+    }
+
+    if (DEBUG_CAN_SEND) {
+        Serial.print("BMS 48V ");
+        Serial.print(bmsNumber);
+        Serial.println(" - Données BMS mises à jour");
+    }
+}
+
+void parseTemperature48VData(DynamicJsonDocument& doc, int bmsNumber) {
+    TemperatureData48V* tempData = (bmsNumber == 1) ? &temperatureData48V_1 : &temperatureData48V_2;
+    
+    if (doc.containsKey("ThermistorNumber")) {
+        tempData->thermistorNumber = doc["ThermistorNumber"].as<uint8_t>();
+        
+        for (int i = 0; i < tempData->thermistorNumber && i < 16; i++) {
+            String key = String(i);
+            if (doc.containsKey(key)) {
+                tempData->temperatures[i] = uint16_t(doc[key].as<float>() * 100); 
+            }
+        }
+        
+        tempData->dataValid = true;
+        if (DEBUG_CAN_SEND) {
+            Serial.print("BMS 48V ");
+            Serial.print(bmsNumber);
+            Serial.println(" - Données température mises à jour");
+        }
+    }
+}
+
+void calculateMinMaxTemperatures48V(int bmsNumber) {
+    TemperatureData48V* tempData = (bmsNumber == 1) ? &temperatureData48V_1 : &temperatureData48V_2;
+    
+    if (!tempData->dataValid || tempData->thermistorNumber == 0) {
+        tempData->overallMinTemp = 9999;
+        tempData->overallMaxTemp = 0;
+        return;
+    }
+    
+    uint16_t currentMin, currentMax;
+    bool firstValidFound = false;
+    
+    for (int i = 0; i < tempData->thermistorNumber && i < 16; i++) {
+        if (tempData->temperatures[i] != 0xFFFF) {
+            uint16_t tempCenti = tempData->temperatures[i];
+            
+            if (!firstValidFound) {
+                currentMin = tempCenti;
+                currentMax = tempCenti;
+                firstValidFound = true;
+            } else {
+                if (tempCenti < currentMin) {
+                    currentMin = tempCenti;
+                }
+                if (tempCenti > currentMax) {
+                    currentMax = tempCenti;
+                }
+            }
+        }
+    }
+    
+    if (firstValidFound) {
+        tempData->overallMinTemp = currentMin;
+        tempData->overallMaxTemp = currentMax;
+    } else {
+        tempData->overallMinTemp = 9999;
+        tempData->overallMaxTemp = 0;
+    }
+}
+
+// ========================= FONCTIONS ENVOI CAN BMS 48V =========================
+
+void sendBms48VDataToCAN(int bmsNumber) {
+    BmsData48V* bmsData = (bmsNumber == 1) ? &bmsData48V_1 : &bmsData48V_2;
+    uint32_t baseId = (bmsNumber == 1) ? CAN_ID_BMS48V_1_BASE : CAN_ID_BMS48V_2_BASE;
+    
+    if (!isBms48VDataValid(bmsNumber)) {
+        if (DEBUG_CAN_SEND) {
+            Serial.print("BMS 48V ");
+            Serial.print(bmsNumber);
+            Serial.println(" - Données invalides, pas d'envoi CAN");
+        }
+        return;
+    }
+    
+    sendCanFrame48V_1(baseId, bmsData);
+    delay(5);
+    sendCanFrame48V_2(baseId + 1, bmsData);
+    delay(5);
+    sendCanFrame48V_3(baseId + 2, bmsData);
+    delay(5);
+    sendCanFrame48V_4(baseId + 3, bmsData);
+    delay(5);
+}
+
+void sendMinMaxTemperature48VToCAN(int bmsNumber) {
+    TemperatureData48V* tempData = (bmsNumber == 1) ? &temperatureData48V_1 : &temperatureData48V_2;
+    uint32_t canId = (bmsNumber == 1) ? CAN_ID_TEMP48V_1_MINMAX : CAN_ID_TEMP48V_2_MINMAX;
+
+    if (!isTemperature48VDataValid(bmsNumber) || tempData->overallMinTemp == 9999 || tempData->overallMaxTemp == 0) {
+        return;
+    }
+
+    txFrame.identifier = canId;
+    txFrame.extd = false;
+    txFrame.data_length_code = 4;
+
+    txFrame.data[0] = (tempData->overallMinTemp >> 8) & 0xFF;
+    txFrame.data[1] = tempData->overallMinTemp & 0xFF;
+    txFrame.data[2] = (tempData->overallMaxTemp >> 8) & 0xFF;
+    txFrame.data[3] = tempData->overallMaxTemp & 0xFF;
+
+    if (ESP32Can.writeFrame(txFrame)) {
+        if (DEBUG_CAN_SEND) {
+            Serial.printf("CAN 0x%03X envoyé: Min Temp=%.2f°C, Max Temp=%.2f°C (BMS 48V %d)\n",
+                          canId, tempData->overallMinTemp / 100.0, tempData->overallMaxTemp / 100.0, bmsNumber);
+        }
+    }
+    delay(5);
+}
+
+void sendCanFrame48V_1(uint32_t canId, BmsData48V* bmsData) {
+    txFrame.identifier = canId;
+    txFrame.extd = false;
+    txFrame.data_length_code = 8;
+    
+    uint16_t totalVoltage = (uint16_t)(bmsData->totalVoltage * 10);
+    uint16_t gatherVoltage = (uint16_t)(bmsData->gatherVoltage * 10);
+    uint16_t current = (uint16_t)((bmsData->current * 10) + 30000);
+    uint16_t soc = (bmsData->soc < 0) ? 0xFFFF : (uint16_t)(bmsData->soc * 10);
+    
+    txFrame.data[0] = (totalVoltage >> 8) & 0xFF;
+    txFrame.data[1] = totalVoltage & 0xFF;
+    txFrame.data[2] = (gatherVoltage >> 8) & 0xFF;
+    txFrame.data[3] = gatherVoltage & 0xFF;
+    txFrame.data[4] = (current >> 8) & 0xFF;
+    txFrame.data[5] = current & 0xFF;
+    txFrame.data[6] = (soc >> 8) & 0xFF;
+    txFrame.data[7] = soc & 0xFF;
+    
+    if (ESP32Can.writeFrame(txFrame)) {
+        if (DEBUG_CAN_SEND) {
+            Serial.printf("CAN 0x%03X envoyé: V=%.1fV, I=%.1fA, SOC=%.1f%%\n", 
+                         canId, bmsData->totalVoltage, bmsData->current, bmsData->soc);
+        }
+    }
+}
+
+void sendCanFrame48V_2(uint32_t canId, BmsData48V* bmsData) {
+    txFrame.identifier = canId;
+    txFrame.extd = false;
+    txFrame.data_length_code = 8;
+    
+    txFrame.data[0] = (bmsData->maxCellVoltage >> 8) & 0xFF;
+    txFrame.data[1] = bmsData->maxCellVoltage & 0xFF;
+    txFrame.data[2] = bmsData->maxCellNumber;
+    txFrame.data[3] = (bmsData->minCellVoltage >> 8) & 0xFF;
+    txFrame.data[4] = bmsData->minCellVoltage & 0xFF;
+    txFrame.data[5] = bmsData->minCellNumber;
+    txFrame.data[6] = 0x00;
+    txFrame.data[7] = 0x00;
+    
+    ESP32Can.writeFrame(txFrame);
+}
+
+void sendCanFrame48V_3(uint32_t canId, BmsData48V* bmsData) {
+    txFrame.identifier = canId;
+    txFrame.extd = false;
+    txFrame.data_length_code = 8;
+    
+    txFrame.data[0] = (uint8_t)(bmsData->maxTemp + 40);
+    txFrame.data[1] = 0x00;
+    txFrame.data[2] = (uint8_t)(bmsData->minTemp + 40);
+    txFrame.data[3] = 0x00;
+    txFrame.data[4] = 0x00;
+    txFrame.data[5] = 0x00;
+    txFrame.data[6] = 0x00;
+    txFrame.data[7] = 0x00;
+    
+    ESP32Can.writeFrame(txFrame);
+}
+
+void sendCanFrame48V_4(uint32_t canId, BmsData48V* bmsData) {
+    txFrame.identifier = canId;
+    txFrame.extd = false;
+    txFrame.data_length_code = 8;
+    
+    for (int i = 0; i < 8; i++) {
+        txFrame.data[i] = (bmsData->errorStatus >> (8 * i)) & 0xFF;
+    }
+    
+    ESP32Can.writeFrame(txFrame);
+}
+
+// ========================= FONCTIONS UTILITAIRES =========================
+
+bool isBms48VDataValid(int bmsNumber) {
+    BmsData48V* bmsData = (bmsNumber == 1) ? &bmsData48V_1 : &bmsData48V_2;
+    return (bmsData->totalVoltage > 0 && 
+            bmsData->soc >= 0 && 
+            bmsData->maxTemp > -100); 
+}
+
+bool isTemperature48VDataValid(int bmsNumber) {
+    TemperatureData48V* tempData = (bmsNumber == 1) ? &temperatureData48V_1 : &temperatureData48V_2;
+    return tempData->dataValid && tempData->thermistorNumber > 0;
+}
+
+void displaySystemStatus() {
+    Serial.println("\n╔════════════════════════════════════════╗");
+    Serial.println("║          ÉTAT SYSTÈME COMPLET           ║");
+    Serial.println("╠════════════════════════════════════════╣");
+    
+    // BMS 24V
+    Serial.println("║                BMS 24V                   ║");
+    Serial.printf("║ V:%.1fV I:%.1fA SOC:%.1f%% T:%d-%d°C    ║\n", 
+                  bmsData24V.totalVoltage, bmsData24V.current, 
+                  bmsData24V.soc, bmsData24V.minTemp, bmsData24V.maxTemp);
+    Serial.println("║            THERMISTANCES 24V             ║");
+    if (isTemperature24VDataValid()) {
+        Serial.printf("║ Temp Min: %.2f°C  Temp Max: %.2f°C      ║\n", 
+                      temperatureData24V.overallMinTemp / 100.0, 
+                      temperatureData24V.overallMaxTemp / 100.0);
+    } else {
+        Serial.println("║ Données non disponibles                 ║");
+    }
+    // BMS 48V #1
+    Serial.println("║               BMS 48V #1                 ║");
+    Serial.printf("║ V:%.1fV I:%.1fA SOC:%.1f%% T:%d-%d°C  Thermistance min: %d   Thermistance max : %d║\n", 
+                  bmsData48V_1.totalVoltage, bmsData48V_1.current, 
+                  bmsData48V_1.soc, bmsData48V_1.minTemp, bmsData48V_1.maxTemp, temperatureData48V_1.overallMinTemp, temperatureData48V_1.overallMaxTemp);
+    
+    // BMS 48V #2
+    Serial.println("║               BMS 48V #2                 ║");
+    Serial.printf("║ V:%.1fV I:%.1fA SOC:%.1f%% T:%d-%d°C  Thermistance min: %d   Thermistance max : %d  ║\n", 
+                  bmsData48V_2.totalVoltage, bmsData48V_2.current, 
+                  bmsData48V_2.soc, bmsData48V_2.minTemp, bmsData48V_2.maxTemp, temperatureData48V_2.overallMinTemp, temperatureData48V_2.overallMaxTemp);
+    
+    // Contrôleur moteur
+    Serial.println("║            CONTRÔLEUR MOTEUR             ║");
+    Serial.printf("║ RPM:%d I:%.1fA V:%.1fV T:%d/%d°C       ║\n", 
+                  controllerData.speed_rpm, controllerData.motor_current,
+                  controllerData.battery_voltage, controllerData.controller_temp,
+                  controllerData.motor_temp);
+    
+    Serial.println("╚════════════════════════════════════════╝\n");
+}
+
+// ========================= SETUP ET LOOP =========================
+
+
+void setup() {
+    Serial.begin(115200);
+    Serial.println("Démarrage ESP32 BMS Unifié...");
+    
+    // Initialisation UART pour BMS 48V
+    SerialFromBMS1.begin(BAUD_RATE, SERIAL_8N1, RX_PIN_1, TX_PIN_1);
+    SerialFromBMS2.begin(BAUD_RATE, SERIAL_8N1, RX_PIN_2, TX_PIN_2);
+    Serial.println("UART BMS 48V initialisés");
+    
+    // Initialisation CAN 
+    ESP32Can.setPins(CAN_TX, CAN_RX);
+    ESP32Can.setRxQueueSize(50);
+    ESP32Can.setTxQueueSize(50);
+    
+    if (ESP32Can.begin(ESP32Can.convertSpeed(250))) {
+        Serial.println("CAN Bus initialisé à 250 kbps");
+    } else {
+        Serial.println("ERREUR: Échec initialisation CAN Bus");
+        while(1) delay(1000); // Arrêt en cas d'échec CAN
+    }
+    
+    Serial.println("Système initialisé avec succès!");
+    Serial.println("========================================");
+}
+
+void loop() {
+    unsigned long currentTime = millis();
+    
+    // ========== LECTURE UART BMS 48V ==========
+    // Lecture BMS 48V #1
+    readUartData(SerialFromBMS1, receivedData_1, dataComplete_1, 1);
+    if (dataComplete_1) {
+        processReceivedJson(receivedData_1, 1);
+        receivedData_1 = "";
+        dataComplete_1 = false;
+    }
+    
+    // Lecture BMS 48V #2
+    readUartData(SerialFromBMS2, receivedData_2, dataComplete_2, 2);
+    if (dataComplete_2) {
+        processReceivedJson(receivedData_2, 2);
+        receivedData_2 = "";
+        dataComplete_2 = false;
+    }
+    
+    // ========== ENVOI CAN BMS 48V ==========
+    // Envoi données BMS 48V vers CAN (toutes les 100ms)
+    if (currentTime - lastBms24VRequestTime >= 100) {
+        sendBms48VDataToCAN(1);
+        sendBms48VDataToCAN(2);
+        sendMinMaxTemperature48VToCAN(1);
+        sendMinMaxTemperature48VToCAN(2);
+        lastBms24VRequestTime = currentTime;
+    }
+    
+    // ========== REQUÊTES BMS 24V ==========
+    // Envoi requêtes BMS 24V (toutes les 500ms)
+    static unsigned long lastBms24VRequest = 0;
+    static uint8_t requestStep = 0;
+    
+    if (currentTime - lastBms24VRequest >= 500) {
+        switch(requestStep) {
+            case 0:
+                sendBms24VRequest(0x18900140);
+                break;
+            case 1:
+                sendBms24VRequest(0x18910140);
+                break;
+            case 2:
+                sendBms24VRequest(0x18920140);
+                break;
+            case 3:
+                sendBms24VRequest(0x18980140);
+                break;
+        }
+        requestStep = (requestStep + 1) % 4;
+        lastBms24VRequest = currentTime;
+    }
+    
+    // ========== LECTURE THERMISTANCES 24V ==========
+    // Lecture thermistances 24V (toutes les 2 secondes)
+    if (currentTime - lastThermistanceTime >= 2000) {
+        updateTemperatures24V();  // Lit les températures ET calcule min/max
+    sendMinMaxTemperature24VToCAN();  // Envoie les min/max via CAN
+    
+    lastThermistanceTime = currentTime;
+    }
+    
+    // ========== RÉCEPTION ET DÉCODAGE CAN ==========
+    // Traitement des trames CAN reçues
+    while (ESP32Can.readFrame(rxFrame)) {
+        // Décodage BMS 24V
+        Serial.printf("[CAN RX] ID: 0x%08X, DLC: %d, Data:", rxFrame.identifier, rxFrame.data_length_code);
+        for (int i = 0; i < rxFrame.data_length_code; i++) {
+            Serial.printf(" %02X", rxFrame.data[i]);
+        }
+        switch(rxFrame.identifier) {
+            case 0x18904001:
+                processReceivedData1890(rxFrame.data, rxFrame.identifier);
+                break;
+            case 0x18914001:
+                processReceivedData1891(rxFrame.data, rxFrame.identifier);
+                break;
+            case 0x18924001:
+                processReceivedData1892(rxFrame.data, rxFrame.identifier);
+                break;
+            case 0x18984001:
+                processReceivedData1898(rxFrame.data, rxFrame.identifier);
+                break;
+        }
+        
+        // Décodage Contrôleur Moteur
+        if (rxFrame.identifier == 0x0CF11E05) {
+            decodeMessage1(rxFrame);
+        }
+        else if (rxFrame.identifier == 0x0CF11F05) {
+            decodeMessage2(rxFrame);
+        }
+    }
+    
+    // ========== AFFICHAGE DEBUG ==========
+    // Affichage périodique de l'état système (toutes les 10 secondes)
+    if (currentTime - lastDebugTime >= 10000) {
+        displaySystemStatus();
+        lastDebugTime = currentTime;
+    }
+    
+    // Petite pause pour éviter la surcharge
+    delay(10);
+}

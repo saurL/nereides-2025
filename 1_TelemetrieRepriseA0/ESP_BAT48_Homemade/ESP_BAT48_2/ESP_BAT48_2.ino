@@ -94,7 +94,7 @@ class Multiplexer {
             
         }
 };
-Multiplexer multiplexer(1, 2, 3, 4, 5, 6); // PINS A DEFINIR
+Multiplexer multiplexer(14,27,26,25,33,16);
 
 
 // === Structure commune pour données BMS 24V ===

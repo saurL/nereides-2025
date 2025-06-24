@@ -3,6 +3,9 @@
 #include <ArduinoJson.h> // For JSON serialization/deserialization with Raspberry Pi
 #include <vector>        // For std::vector used in UART to Raspberry communication
 
+
+#define LED_PIN_1 2
+#define LED_PIN_2 15
 // --- CONFIGURATION CAN TWAI ---
 // Ensure these pins (GPIO5, GPIO4) are correct for your ESP32 board and wiring.
 // Common CAN pins on ESP32 are often 4 and 5, or 21 and 22.
@@ -615,6 +618,7 @@ void displayAllData() {
 
 // --- SETUP ET LOOP ---
 void setup() {
+    unsingned long time = 0;
     Serial.begin(115200);
     while (!Serial); // Wait for serial connection to be established
 
@@ -653,36 +657,46 @@ void setup() {
     Serial.println("En attente de trames CAN...\n");
 }
 
+void makeLedBlink() {
+    if (milis() - 4000 >= timeSinceBlinkUp) {
+        digitalWrite(LED_PIN_1, HIGH);
+        time = milis()
+    }
+    else if (milis() - 2000 >= time) {
+        digitalWrite(LED_PIN_2, DOWN);
+    }
+}
+
 void loop() {
 
     // Vérification des seuils pour allumer la LED
     if (battery.avgTemperature > 54)           // **Condition pour batterie**
         { 
-        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+        makeLedBlink();                    // **Allumer la LED**
     } else {
-        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
     }
 
     
     if (controllerData.controller_temp > 63)// **Condition pour contrôleur moteur**
         { 
-        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+        makeLedBlink();                     // **Allumer la LED**
     } else {
-        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
         }
 
      if (bmsData24V.minTemp > 54)// **temp thermi**
         { 
-        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+        makeLedBlink();                     // **Allumer la LED**
     } else {
         digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
         }
 
     if (bmsData24V.maxTemp > 54)// **temp thermi**
         { 
-        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+        makeLedBlink();                     // **Allumer la LED**
     } else {
-        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
         }
 
     

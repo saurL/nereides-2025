@@ -654,6 +654,38 @@ void setup() {
 }
 
 void loop() {
+
+    // Vérification des seuils pour allumer la LED
+    if (battery.avgTemperature > 54)           // **Condition pour batterie**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+    }
+
+    
+    if (controllerData.controller_temp > 63)// **Condition pour contrôleur moteur**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
+
+     if (bmsData24V.minTemp > 54)// **temp thermi**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
+
+    if (bmsData24V.maxTemp > 54)// **temp thermi**
+        { 
+        digitalWrite(LED_PIN, HIGH);                     // **Allumer la LED**
+    } else {
+        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
+        }
+
+    
     // Read all available CAN frames in a non-blocking manner
     // The `0` as the second argument means no timeout, it reads immediately.
     // rxFrame is declared globally, so no need to redeclare here.

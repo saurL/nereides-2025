@@ -45,9 +45,12 @@ HardwareSerial RaspberrySerial(1); // Using UART1 for communication with Raspber
 #define CAN_ID_MOTOR_MSG1 0x0CF11E05
 #define CAN_ID_MOTOR_MSG2 0x0CF11F05
 
+//Sonde de température globale 
+#define CAN_ID_TEMP_SENSOR 0x013
+
+unsigned long temps;
 
 // --- STRUCTURES DE DONNÉES ---
-
 // Structure pour BMS 24V (CAN)
 // Utilisée pour les données reçues du BMS 24V via CAN.
 struct BmsData24V {
@@ -215,8 +218,56 @@ void send_error(const String& error_name, const String& value) {
     send_json(json);
 }
 
+struct tempGlob {
+    float tempglob = 0 ; 
+};
+tempGlob temperatureGlobale;
 
+// Fonction réception température globale 
+void decodeTemperatureSensor(CanFrame& frame) {
+    if (frame.data_length_code < 2) return;
+    
+    // Décoder la température (little-endian)
+    int16_t tempCentidegreees = (frame.data[1] << 8) | frame.data[0];
+    float temperature = tempCentidegreees / 100.0;
+    temperatureGlobale.tempglob = temperature ; 
+    
+    Serial.printf("Température reçue: %.2f°C (ID: 0x%03X)\n", 
+                  temperature, frame.identifier);
+    
+    send_data("globale_temp", temperatureGlobale.tempglob);
+}
 // --- FONCTIONS DE DÉCODAGE BMS 24V (CAN) ---
+
+//Fonction de calcul de SOC des bms des batteries pour API 
+void calcul_envoi_SOC_API() {
+  if (bmsData48V_1.dataReceived && bmsData48V_2.dataReceived && bmsData24V.dataReceived) {
+    float soc1 = bmsData48V_1.soc;
+    float soc2 = bmsData48V_2.soc;
+    float soc3 = bmsData24V.soc;
+
+    float result = (10000 * soc1 + 10000 * soc2 + 1228 * soc3) / 21228 ;
+    
+    send_data("API_soc", result);
+    Serial.printf("Custom SOC value sent: %.2f\n", result);
+
+    // Optionnel : réinitialiser les indicateurs pour éviter les doublons
+    bmsData48V_1.dataReceived = false;
+    bmsData48V_2.dataReceived = false;
+    bmsData24V.dataReceived = false;
+  }
+}
+
+void calcul_envoi_Puissance_Instant_API(){
+  if (controllerData.dataReceived){
+      float puissance_instant = controllerData.motor_current * controllerData.battery_voltage ; 
+      send_data("API_puissance_instant", puissance_instant); 
+      controllerData.dataReceived = false ; 
+  }
+}
+
+
+
 // Ces fonctions mettent à jour la structure bmsData24V.
 void processReceivedData1890(uint8_t* data, uint32_t identifier) {
     bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
@@ -233,6 +284,10 @@ void processReceivedData1890(uint8_t* data, uint32_t identifier) {
     
     Serial.printf("BMS 24V - V:%.1fV, I:%.1fA, SOC:%.1f%%\n",
                   bmsData24V.totalVoltage, bmsData24V.current, bmsData24V.soc);
+    bmsData24V.dataReceived = true;
+
+  // Appel à la fonction
+  calcul_envoi_SOC_API();
 }
 
 void processReceivedData1891(uint8_t* data, uint32_t identifier) {
@@ -268,8 +323,6 @@ void processReceivedData1898(uint8_t* data, uint32_t identifier) {
     Serial.printf("BMS 24V - ErrorStatus:0x%llX\n", bmsData24V.errorStatus);
 }
 
-// Removed redundant readCanFrames() function, as its logic is directly in loop()
-
 
 // --- FONCTIONS DE DÉCODAGE BMS 48V (CAN) ---
 // Chaque fonction prend en argument la structure BMS 48V spécifique à mettre à jour.
@@ -295,6 +348,10 @@ void decodeCanFrame4801(CanFrame& frame, BmsData48V* bmsData, uint32_t canId) { 
 
     Serial.printf("    Decoded 0x%03X: V_total=%.1fV, V_gather=%.1fV, I=%.1fA, SOC=%.1f%%\n",
                   canId, bmsData->totalVoltage, bmsData->gatherVoltage, bmsData->current, bmsData->soc);
+    bmsData->dataReceived = true;
+
+  
+  calcul_envoi_SOC_API();
 }
 
 void decodeCanFrame4802(CanFrame& frame, BmsData48V* bmsData, uint32_t canId) { // Changed BmsData24V* to BmsData48V*
@@ -464,7 +521,7 @@ void processReceivedCanFrame(CanFrame& frame) {
             processReceivedData1898(frame.data, frame.identifier);
             break;
 
-        // --- BMS 48V #1 (votre premier BMS 48V) ---
+        // --- BMS 48V #1 ( premier BMS 48V) ---
         // Using CAN_ID_BMS1_BASE and its offsets
         case CAN_ID_BMS1_BASE + 0: // 0x001
             decodeCanFrame4801(frame, &bmsData48V_1, frame.identifier);
@@ -479,7 +536,7 @@ void processReceivedCanFrame(CanFrame& frame) {
             decodeCanFrame4804(frame, &bmsData48V_1, frame.identifier);
             break;
 
-        // --- BMS 48V #2 (votre deuxième BMS 48V) ---
+        // --- BMS 48V #2 ( deuxième BMS 48V) ---
         // Using CAN_ID_BMS2_BASE and its offsets
         case CAN_ID_BMS2_BASE + 0: // 0x005
             decodeCanFrame4801(frame, &bmsData48V_2, frame.identifier);
@@ -512,7 +569,9 @@ void processReceivedCanFrame(CanFrame& frame) {
         case CAN_ID_MOTOR_MSG2:
             decodeMotorMessage2(frame);
             break;
-
+        case CAN_ID_TEMP_SENSOR: 
+          decodeTemperatureSensor(frame); 
+          break; 
         default:
             Serial.printf("Trame CAN avec ID non reconnu: 0x%08X\n", frame.identifier); // Changed %03X to %08X
             break;
@@ -618,7 +677,7 @@ void displayAllData() {
 
 // --- SETUP ET LOOP ---
 void setup() {
-    unsingned long time = 0;
+    temps = 0;
     Serial.begin(115200);
     while (!Serial); // Wait for serial connection to be established
 
@@ -656,48 +715,46 @@ void setup() {
     Serial.printf("- Contrôleur moteur (IDs: 0x%08X, 0x%08X)\n", CAN_ID_MOTOR_MSG1, CAN_ID_MOTOR_MSG2);
     Serial.println("En attente de trames CAN...\n");
 }
-
 void makeLedBlink() {
-    if (milis() - 4000 >= timeSinceBlinkUp) {
+    if (millis() - 4000 >= temps) {
         digitalWrite(LED_PIN_1, HIGH);
-        time = milis()
+        temps = millis();
     }
-    else if (milis() - 2000 >= time) {
-        digitalWrite(LED_PIN_2, DOWN);
+    else if (millis() - 2000 >= temps) {
+        digitalWrite(LED_PIN_2, LOW);
     }
 }
 
 void loop() {
 
     // Vérification des seuils pour allumer la LED
-    if (battery.avgTemperature > 54)           // **Condition pour batterie**
-        { 
-        makeLedBlink();                    // **Allumer la LED**
-    } else {
-        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
-    }
-
     
     if (controllerData.controller_temp > 63)// **Condition pour contrôleur moteur**
         { 
         makeLedBlink();                     // **Allumer la LED**
     } else {
-        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
+        digitalWrite(LED_PIN_2, LOW);                      // **Éteindre la LED**
         }
 
-     if (bmsData24V.minTemp > 54)// **temp thermi**
-        { 
-        makeLedBlink();                     // **Allumer la LED**
-    } else {
-        digitalWrite(LED_PIN, LOW);                      // **Éteindre la LED**
-        }
-
-    if (bmsData24V.maxTemp > 54)// **temp thermi**
-        { 
-        makeLedBlink();                     // **Allumer la LED**
-    } else {
-        digitalWrite(LED_PIN_1, LOW);                      // **Éteindre la LED**
-        }
+     if (
+  bmsData24V.minTemp > 54 ||
+  bmsData24V.maxTemp > 54 ||
+  bmsData48V_1.maxTemp > 54 ||
+  bmsData48V_2.maxTemp > 54 ||
+  bmsData48V_1.minTemp > 54 ||
+   bmsData48V_2.minTemp > 54 ||
+   (thermistance48V_1.minTempCalculated / 100.0) >54 ||
+   (thermistance48V_1.maxTempCalculated / 100.0) >54|| 
+   (thermistance48V_2.minTempCalculated / 100.0) >54||
+   (thermistance48V_2.maxTempCalculated / 100.0)>54 ||
+  (thermistance24V.minTempCalculated / 100.0) > 54 ||
+  (thermistance24V.maxTempCalculated / 100.0) > 54 
+     )
+ {
+  makeLedBlink();  // Allumer la LED
+} else {
+  digitalWrite(LED_PIN_1, LOW);  // Éteindre la LED
+}
 
     
     // Read all available CAN frames in a non-blocking manner
@@ -713,7 +770,7 @@ void loop() {
     const unsigned long displayInterval = 3000; // Display every 3 seconds
 
     if (millis() - lastDisplayTime >= displayInterval) {
-        displayAllData();
+       // displayAllData();
         lastDisplayTime = millis();
     }
 

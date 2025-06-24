@@ -372,8 +372,8 @@ void decodeThermistance24V(CanFrame& frame) {
     thermistance24V.maxTempCalculated = (frame.data[2] << 8) | frame.data[3];
     thermistance24V.dataReceived = true;
 
-    send_data("thermistance24_minTemp", thermistance24V.minTempCalculated / 100.0);
-    send_data("thermistance24_maxTemp", thermistance24V.maxTempCalculated / 100.0);
+    send_data("battery24_therm_min", thermistance24V.minTempCalculated / 100.0);
+    send_data("battery24_therm_max", thermistance24V.maxTempCalculated / 100.0);
 
     Serial.printf("Thermistance 24V - Min:%.2f°C, Max:%.2f°C\n",
                   thermistance24V.minTempCalculated / 100.0,

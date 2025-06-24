@@ -518,7 +518,7 @@ void parseTemperature48VData(DynamicJsonDocument& doc, int bmsNumber) {
         for (int i = 0; i < tempData->thermistorNumber && i < 16; i++) {
             String key = String(i);
             if (doc.containsKey(key)) {
-                tempData->temperatures[i] = uint16_t(doc[key].as<float>() * 100); 
+                tempData->temperatures[i] = doc[key].as<uint16_t>(); 
             }
         }
         

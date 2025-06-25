@@ -9,8 +9,8 @@
 // --- CONFIGURATION CAN TWAI ---
 // Ensure these pins (GPIO5, GPIO4) are correct for your ESP32 board and wiring.
 // Common CAN pins on ESP32 are often 4 and 5, or 21 and 22.
-#define CAN_TX_PIN 5
-#define CAN_RX_PIN 4
+#define CAN_TX_PIN 22
+#define CAN_RX_PIN 21
 #define CAN_BITRATE 250 // 250 kbps, adjust if your CAN bus operates at a different speed
 
 // --- CONFIGURATION UART POUR RASPBERRY ---
@@ -252,9 +252,9 @@ void calcul_envoi_SOC_API() {
     Serial.printf("Custom SOC value sent: %.2f\n", result);
 
     // Optionnel : réinitialiser les indicateurs pour éviter les doublons
-    bmsData48V_1.dataReceived = false;
+    /* bmsData48V_1.dataReceived = false;
     bmsData48V_2.dataReceived = false;
-    bmsData24V.dataReceived = false;
+    bmsData24V.dataReceived = false; */
   }
 }
 
@@ -770,7 +770,7 @@ void loop() {
     const unsigned long displayInterval = 3000; // Display every 3 seconds
 
     if (millis() - lastDisplayTime >= displayInterval) {
-       // displayAllData();
+        displayAllData();
         lastDisplayTime = millis();
     }
 

@@ -1,3 +1,4 @@
+//esp central fusion de tout, modif 
 #include <Arduino.h>
 #include <ESP32-TWAI-CAN.hpp>
 #include <ArduinoJson.h> // For JSON serialization/deserialization with Raspberry Pi
@@ -89,7 +90,7 @@ struct BmsData48V {
 // Utilisée pour les données min/max des thermistances 24V et 48V.
 // Les valeurs sont stockées en centièmes de degré Celsius (e.g., 25.50°C -> 2550).
 struct DecodedTemperatureData {
-    uint16_t minTempCalculated = 0xFFFF; // Initialiser à une valeur haute pour le min
+    uint16_t minTempCalculated = 0x0000; // Initialiser à une valeur haute pour le min
     uint16_t maxTempCalculated = 0x0000; // Initialiser à une valeur basse pour le max
     bool dataReceived = false;           // Flag to indicate if data has been received at least once
 };
@@ -182,8 +183,23 @@ std::vector<uint8_t> encodeVarIntLength(const std::vector<uint8_t>& json_bytes) 
     return result;
 }
 
-// Envoie un document JSON sérialisé via UART au Raspberry Pi.
+
 void send_json(StaticJsonDocument<200>& json) {
+    String jsonString;
+    serializeJson(json, jsonString);
+    
+    // Envoyer le JSON avec un délimiteur (plus de caractère nul !)
+    RaspberrySerial.println(jsonString);
+    
+    // Petit délai pour éviter de surcharger le buffer série
+    delay(2);
+    
+    // Debug optionnel (décommenter si besoin)
+    // Serial.print("Sent to RPi: ");
+    // Serial.println(jsonString);
+}
+// Envoie un document JSON sérialisé via UART au Raspberry Pi.
+/*void send_json(StaticJsonDocument<200>& json) {
     String jsonString;
     serializeJson(json, jsonString);
     
@@ -191,7 +207,7 @@ void send_json(StaticJsonDocument<200>& json) {
     // Cette partie est cruciale pour que le Raspberry Pi puisse parser correctement.
     std::vector<uint8_t> message;
     message.push_back(0); // Premier octet 0 (peut-être un marqueur de début de message)
-    
+    //message.push_back('{'); // Deuxième octet est '{'
     // Correction: Iterate from index 0 to send the entire JSON string including '{'.
     for (size_t i = 0; i < jsonString.length(); ++i) { 
         message.push_back(static_cast<uint8_t>(jsonString[i]));
@@ -200,7 +216,7 @@ void send_json(StaticJsonDocument<200>& json) {
     RaspberrySerial.write(message.data(), message.size());
     // Serial.print("Sent to RPi: "); // Uncomment for debug prints
     // Serial.println(jsonString);   // Uncomment for debug prints
-}
+}*/
 
 // Crée et envoie un message JSON pour une donnée float.
 void send_data(const String& data_name, float value) {
@@ -231,11 +247,12 @@ void decodeTemperatureSensor(CanFrame& frame) {
     int16_t tempCentidegreees = (frame.data[1] << 8) | frame.data[0];
     float temperature = tempCentidegreees / 100.0;
     temperatureGlobale.tempglob = temperature ; 
-    
+    Serial.print("==================================");
     Serial.printf("Température reçue: %.2f°C (ID: 0x%03X)\n", 
                   temperature, frame.identifier);
     
     send_data("globale_temp", temperatureGlobale.tempglob);
+    Serial.print("ENVOI GLABALE TEMP OK");
 }
 // --- FONCTIONS DE DÉCODAGE BMS 24V (CAN) ---
 
@@ -244,9 +261,9 @@ void calcul_envoi_SOC_API() {
   if (bmsData48V_1.dataReceived && bmsData48V_2.dataReceived && bmsData24V.dataReceived) {
     float soc1 = bmsData48V_1.soc;
     float soc2 = bmsData48V_2.soc;
-    float soc3 = bmsData24V.soc;
 
-    float result = (10000 * soc1 + 10000 * soc2 + 1228 * soc3) / 21228 ;
+
+    float result = (5000 * soc1 + 5000 * soc2 ) / 21228 ;
     
     send_data("API_soc", result);
     Serial.printf("Custom SOC value sent: %.2f\n", result);
@@ -254,15 +271,15 @@ void calcul_envoi_SOC_API() {
     // Optionnel : réinitialiser les indicateurs pour éviter les doublons
     /* bmsData48V_1.dataReceived = false;
     bmsData48V_2.dataReceived = false;
-    bmsData24V.dataReceived = false; */
-  }
+    bmsData24V.dataReceived = false; 
+  }*/}
 }
 
 void calcul_envoi_Puissance_Instant_API(){
   if (controllerData.dataReceived){
       float puissance_instant = controllerData.motor_current * controllerData.battery_voltage ; 
       send_data("API_puissance_instant", puissance_instant); 
-      controllerData.dataReceived = false ; 
+      
   }
 }
 
@@ -270,6 +287,8 @@ void calcul_envoi_Puissance_Instant_API(){
 
 // Ces fonctions mettent à jour la structure bmsData24V.
 void processReceivedData1890(uint8_t* data, uint32_t identifier) {
+    Serial.println("\n BMS 24V");
+
     bmsData24V.totalVoltage = ((data[0] << 8) | data[1]) * 0.1;
     bmsData24V.gatherVoltage = ((data[2] << 8) | data[3]) * 0.1;
     bmsData24V.current = (((data[4] << 8) | data[5]) - 30000) * 0.1;
@@ -281,13 +300,13 @@ void processReceivedData1890(uint8_t* data, uint32_t identifier) {
     send_data("battery24_soc", bmsData24V.soc);
     send_data("battery24_voltage", bmsData24V.totalVoltage);
     send_data("battery24_current", bmsData24V.current);
+    Serial.print("ENVOIE BAT 24 OK : soc, voltage, curent");
     
     Serial.printf("BMS 24V - V:%.1fV, I:%.1fA, SOC:%.1f%%\n",
                   bmsData24V.totalVoltage, bmsData24V.current, bmsData24V.soc);
-    bmsData24V.dataReceived = true;
 
   // Appel à la fonction
-  calcul_envoi_SOC_API();
+  //calcul_envoi_SOC_API();
 }
 
 void processReceivedData1891(uint8_t* data, uint32_t identifier) {
@@ -298,7 +317,7 @@ void processReceivedData1891(uint8_t* data, uint32_t identifier) {
     
     send_data("battery24_maxCellVoltage", bmsData24V.maxCellVoltage);
     send_data("battery24_minCellVoltage", bmsData24V.minCellVoltage);
-    
+    Serial.print("ENVOIE BATT 24OK : maxcell, moncell voltage  ");
     Serial.printf("BMS 24V - CellMax:%dmV(#%d), CellMin:%dmV(#%d)\n",
                   bmsData24V.maxCellVoltage, bmsData24V.maxCellNumber,
                   bmsData24V.minCellVoltage, bmsData24V.minCellNumber);
@@ -310,7 +329,7 @@ void processReceivedData1892(uint8_t* data, uint32_t identifier) {
     
     send_data("battery24_maxTemp", bmsData24V.maxTemp);
     send_data("battery24_minTemp", bmsData24V.minTemp);
-    
+    Serial.print("ENVOIE BAT 24 OK : maxtemp, mont temp");
     Serial.printf("BMS 24V - TempMax:%d°C, TempMin:%d°C\n",
                   bmsData24V.maxTemp, bmsData24V.minTemp);
 }
@@ -351,7 +370,7 @@ void decodeCanFrame4801(CanFrame& frame, BmsData48V* bmsData, uint32_t canId) { 
     bmsData->dataReceived = true;
 
   
-  calcul_envoi_SOC_API();
+  //calcul_envoi_SOC_API();
 }
 
 void decodeCanFrame4802(CanFrame& frame, BmsData48V* bmsData, uint32_t canId) { // Changed BmsData24V* to BmsData48V*
@@ -434,7 +453,7 @@ void decodeThermistance24V(CanFrame& frame) {
 
     send_data("battery24_therm_min", thermistance24V.minTempCalculated / 100.0);
     send_data("battery24_therm_max", thermistance24V.maxTempCalculated / 100.0);
-
+    Serial.print("ENVOIE BAT 24 OK: THER MAX MIN");
     Serial.printf("Thermistance 24V - Min:%.2f°C, Max:%.2f°C\n",
                   thermistance24V.minTempCalculated / 100.0,
                   thermistance24V.maxTempCalculated / 100.0);
@@ -457,7 +476,7 @@ void decodeMotorMessage1(const CanFrame &frame) {
     send_data("motor_current_a", controllerData.motor_current);
     send_data("motor_battery_voltage", controllerData.battery_voltage);
     send_data("motor_error_code", controllerData.error_code);
-
+    Serial.print("ENVOIE CM OK : RPM CURRENT VOLTAGE ERROR CODE");
     Serial.printf("Motor - RPM:%d, Current:%.1fA, Voltage:%.1fV, Error:0x%04X\n",
                   controllerData.speed_rpm, controllerData.motor_current,
                   controllerData.battery_voltage, controllerData.error_code);
@@ -491,7 +510,7 @@ void decodeMotorMessage2(const CanFrame &frame) {
     send_data("motor_throttle", controllerData.throttle_raw);
     send_data("motor_controller_temp", controllerData.controller_temp);
     send_data("motor_temp", controllerData.motor_temp);
-
+    Serial.print("ENVOIE CM OK : THROTTLE TEMP TEMP MOTOR");
     Serial.printf("Motor - Throttle:%d, CtrlTemp:%d°C, MotorTemp:%d°C, Cmd:%s\n",
                   controllerData.throttle_raw, controllerData.controller_temp,
                   controllerData.motor_temp, controllerData.command);
@@ -684,14 +703,21 @@ void setup() {
     // Initialisation UART Raspberry
     // Set up UART1 for communication with Raspberry Pi
     RaspberrySerial.begin(115200, SERIAL_8N1, RX_PIN_RASPBERRY, TX_PIN_RASPBERRY); // Use renamed pins
-    Serial.println("UART Raspberry initialisé.");
+    if (RaspberrySerial) {
+        Serial.println("UART Raspberry OK");
+    } else {
+        Serial.println("ERREUR: UART Raspberry NON initialisé");
+    }
 
     // Configuration CAN
     // Set up CAN bus pins and queue sizes
     ESP32Can.setPins(CAN_TX_PIN, CAN_RX_PIN);
     ESP32Can.setRxQueueSize(30); // Increased Rx queue size for more robust reception
     ESP32Can.setTxQueueSize(30); // Increased Tx queue size for more robust transmission
-    
+    pinMode(LED_PIN_1, OUTPUT);
+    pinMode(LED_PIN_2, OUTPUT);
+    digitalWrite(LED_PIN_1, LOW);
+    digitalWrite(LED_PIN_2, LOW);
     // Set CAN bus speed. ESP32Can.convertSpeed expects the bitrate in Hz directly.
     // Corrected: pass CAN_BITRATE directly, not CAN_BITRATE / 1000.
     if (ESP32Can.begin(ESP32Can.convertSpeed(CAN_BITRATE))) {
@@ -715,20 +741,24 @@ void setup() {
     Serial.printf("- Contrôleur moteur (IDs: 0x%08X, 0x%08X)\n", CAN_ID_MOTOR_MSG1, CAN_ID_MOTOR_MSG2);
     Serial.println("En attente de trames CAN...\n");
 }
+// Version corrigée de la fonction
 void makeLedBlink() {
-    if (millis() - 4000 >= temps) {
-        digitalWrite(LED_PIN_1, HIGH);
-        temps = millis();
-    }
-    else if (millis() - 2000 >= temps) {
-        digitalWrite(LED_PIN_2, LOW);
+    static unsigned long lastTime = 0;
+    static bool led1On = true;
+    
+    if (millis() - lastTime >= 500) {
+        digitalWrite(LED_PIN_1, led1On ? HIGH : LOW);
+        digitalWrite(LED_PIN_2, led1On ? LOW : HIGH);
+        led1On = !led1On;
+        lastTime = millis();
     }
 }
 
 void loop() {
-
+  Serial.print(bmsData24V.soc);
+  send_data("battery24_soc", 34);
+  Serial.print(controllerData.motor_current);
     // Vérification des seuils pour allumer la LED
-    
     if (controllerData.controller_temp > 63)// **Condition pour contrôleur moteur**
         { 
         makeLedBlink();                     // **Allumer la LED**
@@ -761,7 +791,9 @@ void loop() {
     // The `0` as the second argument means no timeout, it reads immediately.
     // rxFrame is declared globally, so no need to redeclare here.
     while (ESP32Can.readFrame(rxFrame, 0)) {
-        processReceivedCanFrame(rxFrame);
+      
+       processReceivedCanFrame(rxFrame);
+       Serial.print(temperatureGlobale.tempglob); 
     }
 
     // Periodic display of all collected data

@@ -427,7 +427,7 @@ void decodeMessage1(const CanFrame &frame) {
     controllerData.battery_voltage = ((frame.data[5] << 8) | frame.data[4]) / 10.0;
     controllerData.error_code = (frame.data[7] << 8) | frame.data[6];
 
-    Serial.print("--- Contrôleur Message 1 ---");
+    Serial.println("--- Contrôleur Message 1 ---");
     for (int i = 0; i < 16; i++) {
         if (controllerData.error_code & (1 << i)) {
             Serial.printf("ERR%d: Active\n", i);
@@ -460,7 +460,7 @@ void decodeMessage2(const CanFrame &frame) {
     controllerData.hall_b = (switch_signals >> 1) & 0x01;
     controllerData.hall_c = (switch_signals >> 2) & 0x01;
     
-    Serial.print("--- Contrôleur Message 2 ---");
+    Serial.println("--- Contrôleur Message 2 ---");
 }
 
 // ========================= FONCTIONS BMS 48V (UART) =========================
@@ -833,107 +833,128 @@ void setup() {
 void loop() {
     unsigned long currentTime = millis();
     
-    // ========== LECTURE UART BMS 48V ==========
-    // Lecture BMS 48V #1
-    readUartData(SerialFromBMS1, receivedData_1, dataComplete_1, 1);
-    if (dataComplete_1) {
-        processReceivedJson(receivedData_1, 1);
-        receivedData_1 = "";
-        dataComplete_1 = false;
-    }
-    
-    // Lecture BMS 48V #2
-    readUartData(SerialFromBMS2, receivedData_2, dataComplete_2, 2);
-    if (dataComplete_2) {
-        processReceivedJson(receivedData_2, 2);
-        receivedData_2 = "";
-        dataComplete_2 = false;
-    }
-    //Lecture sonde température globale + envoie CAN
-        readAndSendTemperature();
-
-    // ========== ENVOI CAN BMS 48V ==========
-    // Envoi données BMS 48V vers CAN (toutes les 100ms)
-    if (currentTime - lastBms24VRequestTime >= 100) {
-        sendBms48VDataToCAN(1);
-        sendBms48VDataToCAN(2);
-        sendMinMaxTemperature48VToCAN(1);
-        sendMinMaxTemperature48VToCAN(2);
-        lastBms24VRequestTime = currentTime;
-    }
-    
-    // ========== REQUÊTES BMS 24V ==========
-    // Envoi requêtes BMS 24V (toutes les 500ms)
-    static unsigned long lastBms24VRequest = 0;
-    static uint8_t requestStep = 0;
-    
-    if (currentTime - lastBms24VRequest >= 500) {
-        switch(requestStep) {
-            case 0:
-                sendBms24VRequest(0x18900140);
-                break;
-            case 1:
-                sendBms24VRequest(0x18910140);
-                break;
-            case 2:
-                sendBms24VRequest(0x18920140);
-                break;
-            case 3:
-                sendBms24VRequest(0x18980140);
-                break;
-        }
-        requestStep = (requestStep + 1) % 4;
-        lastBms24VRequest = currentTime;
-    }
-    
-    // ========== LECTURE THERMISTANCES 24V ==========
-    // Lecture thermistances 24V (toutes les 2 secondes)
-    if (currentTime - lastThermistanceTime >= 2000) {
-        updateTemperatures24V();  // Lit les températures ET calcule min/max
-    sendMinMaxTemperature24VToCAN();  // Envoie les min/max via CAN
-    
-    lastThermistanceTime = currentTime;
-    }
-    
-    // ========== RÉCEPTION ET DÉCODAGE CAN ==========
-    // Traitement des trames CAN reçues
-    while (ESP32Can.readFrame(rxFrame)) {
-        // Décodage BMS 24V
+    // ========== PRIORITÉ 1: LECTURE CAN ==========
+    // Traitement des trames CAN reçues (avec limitation pour éviter blocage)
+    int canFramesProcessed = 0;
+    while (ESP32Can.readFrame(rxFrame) && canFramesProcessed < 5) { // Réduction à 5 pour éviter blocage
+        canFramesProcessed++;
+        
+        // Debug réception
         Serial.printf("[CAN RX] ID: 0x%08X, DLC: %d, Data:", rxFrame.identifier, rxFrame.data_length_code);
         for (int i = 0; i < rxFrame.data_length_code; i++) {
             Serial.printf(" %02X", rxFrame.data[i]);
         }
+        Serial.println();
+        
+        // Décodage BMS 24V
         switch(rxFrame.identifier) {
             case 0x18904001:
                 processReceivedData1890(rxFrame.data, rxFrame.identifier);
+                Serial.println("✓ BMS 24V - Données générales reçues");
                 break;
             case 0x18914001:
                 processReceivedData1891(rxFrame.data, rxFrame.identifier);
+                Serial.println("✓ BMS 24V - Données cellules reçues");
                 break;
             case 0x18924001:
                 processReceivedData1892(rxFrame.data, rxFrame.identifier);
+                Serial.println("✓ BMS 24V - Données température reçues");
                 break;
             case 0x18984001:
                 processReceivedData1898(rxFrame.data, rxFrame.identifier);
+                Serial.println("✓ BMS 24V - Données erreurs reçues");
                 break;
-        }
-        
-        // Décodage Contrôleur Moteur
-        if (rxFrame.identifier == 0x0CF11E05) {
-            decodeMessage1(rxFrame);
-        }
-        else if (rxFrame.identifier == 0x0CF11F05) {
-            decodeMessage2(rxFrame);
+            // Décodage Contrôleur Moteur
+            case 0x0CF11E05:
+                decodeMessage1(rxFrame);
+                Serial.println("✓ CONTRÔLEUR - Message 1 reçu");
+                break;
+            case 0x0CF11F05:
+                decodeMessage2(rxFrame);
+                Serial.println("✓ CONTRÔLEUR - Message 2 reçu");
+                break;
+            default:
+                Serial.printf("? CAN ID inconnu: 0x%08X\n", rxFrame.identifier);
+                break;
         }
     }
     
-    // ========== AFFICHAGE DEBUG ==========
-    // Affichage périodique de l'état système (toutes les 10 secondes)
-    if (currentTime - lastDebugTime >= 10000) {
+    // ========== PRIORITÉ 2: ENVOI REQUÊTES BMS 24V ==========
+    // Envoi des requêtes BMS 24V toutes les 1000ms
+    if (currentTime - lastBms24VRequestTime >= 1000) {
+        Serial.println("\n--- Envoi requêtes BMS 24V ---");
+        
+        // Séquence de requêtes BMS 24V avec délais
+        sendBms24VRequest(0x18900140);  // Données générales
+        delay(50);
+        
+        sendBms24VRequest(0x18910140);  // Données cellules
+        delay(50);
+        
+        sendBms24VRequest(0x18920140);  // Données température
+        delay(50);
+        
+        sendBms24VRequest(0x18980140);  // Données erreurs
+        delay(50);
+        
+        lastBms24VRequestTime = currentTime;
+        Serial.println("--- Requêtes BMS 24V envoyées ---\n");
+    }
+    
+    // ========== PRIORITÉ 3: LECTURE UART BMS 48V ==========
+    // Lecture des données UART (BMS 48V)
+    readUartData(SerialFromBMS1, receivedData_1, dataComplete_1, 1);
+    readUartData(SerialFromBMS2, receivedData_2, dataComplete_2, 2);
+    
+    // Traitement des données JSON complètes BMS 48V #1
+    if (dataComplete_1) {
+        Serial.println("Données BMS 48V #1 reçues : " + receivedData_1);
+        processReceivedJson(receivedData_1, 1);
+        receivedData_1 = "";
+        dataComplete_1 = false;
+        
+        // Envoi immédiat vers CAN après réception
+        sendBms48VDataToCAN(1);
+        sendMinMaxTemperature48VToCAN(1);
+    }
+    
+    // Traitement des données JSON complètes BMS 48V #2
+    if (dataComplete_2) {
+        Serial.println("Données BMS 48V #2 reçues : " + receivedData_2);
+        processReceivedJson(receivedData_2, 2);
+        receivedData_2 = "";
+        dataComplete_2 = false;
+        
+        // Envoi immédiat vers CAN après réception
+        sendBms48VDataToCAN(2);
+        sendMinMaxTemperature48VToCAN(2);
+    }
+    
+    // ========== PRIORITÉ 4: LECTURE TEMPÉRATURES 24V ==========
+    // Lecture des thermistances 24V toutes les 2000ms
+    if (currentTime - lastThermistanceTime >= 2000) {
+        Serial.println("\n--- Lecture thermistances 24V ---");
+        updateTemperatures24V();
+        sendMinMaxTemperature24VToCAN();
+        lastThermistanceTime = currentTime;
+    }
+    
+    // ========== PRIORITÉ 5: LECTURE SONDE TEMPÉRATURE GLOBALE ==========
+    // Lecture de la sonde température globale toutes les 3000ms
+    static unsigned long lastTempGlobalTime = 0;
+    if (currentTime - lastTempGlobalTime >= 3000) {
+        Serial.println("\n--- Lecture température globale ---");
+        readAndSendTemperature();
+        lastTempGlobalTime = currentTime;
+    }
+    
+    // ========== AFFICHAGE ÉTAT SYSTÈME ==========
+    // Affichage de l'état général toutes les 5 secondes
+    if (currentTime - lastDebugTime >= 5000) {
         displaySystemStatus();
         lastDebugTime = currentTime;
     }
     
-    // Petite pause pour éviter la surcharge
+    // Petit délai pour éviter une boucle trop rapide
     delay(10);
 }

@@ -363,12 +363,12 @@ void displayAllData() {
     Serial.printf("║ Charge voltage : %.2f |Charge current limit : %.2f | Discharge current limit : %.2f ║ \n ", battery.chargeVoltage, battery.chargeCurrentLimit, battery.dischargeCurrentLimit);
     Serial.printf("║ SOC : %d | SOH %d                          ║ \n", battery.soc, battery.soh);
     Serial.printf("║ Module Voltage %.2f | Total Current %.2f  | Average Temperature %.2f             ║ \n", battery.moduleVoltage, battery.totalCurrent, battery.avgTemperature);
-    Serial.printf("║ Prot1 %d | Prot2 %d | Alarm1 %d | Alarm 2 %d | Module count %d      ║ \n", battery.prot1, battery.prot2, battery.alarm1, battery.alarm2);
+    Serial.printf("║ Prot1 %d | Prot2 %d | Alarm1 %d | Alarm 2 %d | Module count %d      ║ \n", battery.prot1, battery.prot2, battery.alarm1, battery.alarm2, battery.moduleCount);
             Serial.println("╠════════════════════════════════════════════════════════╣");
     Serial.println("╠════════════════════════════════════════════════════════╣");    
     
     Serial.println("║                       TEMP GLOBAL                  ║");
-    Serial.printf("║                            %d                      ║ \n", temperatureGlobale.tempglob);
+    Serial.printf("║                            %.2f                     ║ \n", temperatureGlobale.tempglob);
     Serial.println("╚════════════════════════════════════════════════════════╝\n");
 }
 

@@ -1,8 +1,8 @@
 #include <Wire.h>
 #include <ESP32-TWAI-CAN.hpp>
 
-#define CAN_TX 5
-#define CAN_RX 4
+#define CAN_TX 4
+#define CAN_RX 5
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
 
 CanFrame rxFrame;
@@ -398,7 +398,7 @@ void setup() {
     pinMode(thermistorPins[i], INPUT);
   }
 
-  Wire.begin(21,22, SLAVE_ADDRESS);  //pin ok
+  Wire.begin(SLAVE_ADDRESS);  //pin ok
   Wire.onReceive(receiveEvent);
   Serial.println("Esclave I2C prêt à recevoir les données...");
 

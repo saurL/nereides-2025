@@ -8,6 +8,9 @@
 #define CAN_TX 4
 #define CAN_RX 5
 #define SLAVE_ADDRESS 0x08  // Adresse I2C de l'esclave
+// Contrôleur moteur (identifiants existants)
+#define CAN_ID_MOTOR_MSG1 0x0CF11E05
+#define CAN_ID_MOTOR_MSG2 0x0CF11F05
 //configuration sonde température globale 
 #define TEMP_SENSOR_PIN 13
 #define CAN_ID_TEMP_SENSOR 0x013
@@ -64,6 +67,50 @@ struct MotorControllerData {
 // Instanciation globale
 MotorControllerData controllerData;
 
+void decodeMotorMessage1(const CanFrame &frame) {
+    controllerData.speed_rpm = (frame.data[1] << 8) | frame.data[0];
+    controllerData.motor_current = (((frame.data[3] << 8) | frame.data[2]) / 10.0) - 2000;
+    controllerData.battery_voltage = ((frame.data[5] << 8) | frame.data[4]) / 10.0;
+    controllerData.error_code = (frame.data[7] << 8) | frame.data[6];
+    
+    Serial.print("ENVOIE CM OK : RPM CURRENT VOLTAGE ERROR CODE");
+    Serial.printf("Motor - RPM:%d, Current:%.1fA, Voltage:%.1fV, Error:0x%04X\n",
+                  controllerData.speed_rpm, controllerData.motor_current,
+                  controllerData.battery_voltage, controllerData.error_code);
+}
+
+void decodeMotorMessage2(const CanFrame &frame) {
+    controllerData.throttle_raw = frame.data[0];
+    controllerData.throttle_voltage = controllerData.throttle_raw * 5.0 / 255.0;
+    controllerData.controller_temp = frame.data[1] - 40;
+    controllerData.motor_temp = frame.data[2] - 30;
+
+    uint8_t controller_status = frame.data[4];
+    uint8_t switch_signals = frame.data[5];
+
+    const char* commands[] = {"Neutral", "Forward", "Backward", "Reserved"};
+    const char* feedbacks[] = {"Stationary", "Forward", "Backward", "Reserved"};
+
+    controllerData.command = commands[controller_status & 0x03];
+    controllerData.feedback = feedbacks[(controller_status >> 2) & 0x03];
+
+    controllerData.switch_boost = (switch_signals >> 7) & 0x01;
+    controllerData.switch_foot = (switch_signals >> 6) & 0x01;
+    controllerData.switch_fwd = (switch_signals >> 5) & 0x01;
+    controllerData.switch_bwd = (switch_signals >> 4) & 0x01;
+    controllerData.switch_brake = (switch_signals >> 3) & 0x01;
+
+    controllerData.hall_a = (switch_signals >> 0) & 0x01;
+    controllerData.hall_b = (switch_signals >> 1) & 0x01;
+    controllerData.hall_c = (switch_signals >> 2) & 0x01;
+
+    Serial.print("ENVOIE CM OK : THROTTLE TEMP TEMP MOTOR");
+    Serial.printf("Motor - Throttle:%d, CtrlTemp:%d°C, MotorTemp:%d°C, Cmd:%s\n",
+                  controllerData.throttle_raw, controllerData.controller_temp,
+                  controllerData.motor_temp, controllerData.command);
+}
+
+
 void sendTemperatureViaCAN(float temperature) {
     // Vérifier si la température est valide (DS18B20 retourne -127 en cas d'erreur)
     if (temperature == -127.0 ) {
@@ -111,7 +158,13 @@ void readAndSendTemperature() {
 
 // Fonction qui stocke les données reçues par I2C de la batterie 48V directement dans la structure
 void receiveEvent(int numBytes) {
-    Wire.readBytes((char*)&bmsData48V, sizeof(BatteryRaw));
+    if (numBytes != sizeof(BatteryRaw)) {
+    Serial.printf("Erreur: %d octets attendus %d -> rejetés\n", numBytes, sizeof(BatteryRaw));
+    while (Wire.available()) Wire.read();  // vider le buffer
+    return;
+  }
+
+  Wire.readBytes((char*)&bmsData48V, sizeof(BatteryRaw));
 
     // Affichage dans le moniteur série
     Serial.println("<< Données batterie reçues :");
@@ -212,6 +265,7 @@ void loop() {
  
     reformAndSendCANFrames();
     readAndSendTemperature();
+    
 
 
   delay(1000);
